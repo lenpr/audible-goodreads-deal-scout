@@ -14,6 +14,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from audible_goodreads_deal_scout import core, public_cli  # noqa: E402
 from audible_goodreads_deal_scout import delivery as delivery_mod  # noqa: E402
+from audible_goodreads_deal_scout import repo_audit  # noqa: E402
 
 
 GOODREADS_HEADERS = [
@@ -257,7 +258,19 @@ class AudibleGoodreadsDealScoutTests(unittest.TestCase):
         self.assertEqual(rc, 0)
         payload = json.loads(output_text)
         self.assertTrue(payload["frontmatter"]["hasSkillKey"])
+        self.assertTrue(payload["privacyAudit"]["ok"])
         self.assertIn("clawhub skill publish", payload["recommendedPublishCommand"])
+
+    def test_repo_audit_detects_private_machine_markers(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            leak_text = "run this on " + "hor" + "st via " + "tail" + "scale"
+            (tmp / "notes.txt").write_text(leak_text, encoding="utf-8")
+            payload = repo_audit.scan_repo_for_leaks(tmp)
+        self.assertFalse(payload["ok"])
+        markers = {finding["marker"] for finding in payload["findings"]}
+        self.assertIn("hor" + "st", markers)
+        self.assertIn("tail" + "scale", markers)
 
     def test_bold_visible_text_styles_ascii_title(self) -> None:
         self.assertEqual(core.bold_visible_text("Signal Fire"), "𝗦𝗶𝗴𝗻𝗮𝗹 𝗙𝗶𝗿𝗲")

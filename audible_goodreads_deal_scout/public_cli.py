@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 
 from . import core
+from .repo_audit import scan_repo_for_leaks
 
 
 def load_json_input(path_or_dash: str | None) -> dict:
@@ -277,6 +278,12 @@ def command_publish_audit(args: argparse.Namespace) -> int:
     for label, path in required_files.items():
         if not path.exists():
             warnings.append(f"Missing required publish file: {label}")
+    leak_audit = scan_repo_for_leaks(skill_dir)
+    if not leak_audit["ok"]:
+        warnings.extend(
+            f"Privacy leak marker '{finding['marker']}' found in {finding['type']} {finding['path']}"
+            for finding in leak_audit["findings"]
+        )
     result = {
         "ok": not warnings,
         "skillDir": str(skill_dir),
@@ -287,6 +294,7 @@ def command_publish_audit(args: argparse.Namespace) -> int:
             "hasSkillKey": "skillKey" in skill_text,
             "hasRequirements": "requires" in skill_text,
         },
+        "privacyAudit": leak_audit,
         "supportedMarketplaces": sorted(core.SUPPORTED_MARKETPLACES),
         "recommendedPublishCommand": (
             f'clawhub skill publish "{skill_dir}" --slug audible-goodreads-deal-scout '

@@ -87,7 +87,7 @@ When you set `audibleMarketplace`, use one of those short keys. Example:
 
 A notes file does **not** need a strict format. It can just be freeform text.
 
-Example: [examples/preferences.example.md](/Users/D068138/Library/Mobile%20Documents/com~apple~CloudDocs/Coding/Codex/audible-goodreads-deal-scout/examples/preferences.example.md)
+Example: `examples/preferences.example.md`
 
 You can write things like:
 - authors you often like
