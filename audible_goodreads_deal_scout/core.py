@@ -946,7 +946,7 @@ def validate_runtime_output(payload: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("goodreads.status must be resolved, no_match, or lookup_failed.")
     if fit_status not in {"written", "not_applicable", "unavailable"}:
         raise ValueError("fit.status must be written, not_applicable, or unavailable.")
-    return {
+    normalized = {
         "schemaVersion": 1,
         "goodreads": {
             "status": goodreads_status,
@@ -962,6 +962,25 @@ def validate_runtime_output(payload: dict[str, Any]) -> dict[str, Any]:
             "sentence": normalize_fit_sentence(str(fit.get("sentence") or "")) or None,
         },
     }
+    normalized_goodreads = normalized["goodreads"]
+    normalized_fit = normalized["fit"]
+    if goodreads_status == "resolved":
+        missing = [
+            field
+            for field in ("url", "title", "author", "averageRating")
+            if not normalized_goodreads.get(field)
+        ]
+        if missing:
+            raise ValueError(f"Resolved Goodreads output must include: {', '.join(missing)}.")
+    else:
+        for field in ("url", "title", "author", "averageRating", "ratingsCount"):
+            if normalized_goodreads.get(field) not in (None, ""):
+                raise ValueError(f"Goodreads status '{goodreads_status}' must not include {field}.")
+    if fit_status == "written" and not normalized_fit.get("sentence"):
+        raise ValueError("fit.status 'written' requires a non-empty sentence.")
+    if fit_status != "written":
+        normalized_fit["sentence"] = None
+    return normalized
 
 
 def price_display(audible: dict[str, Any], marketplace_key: str) -> str:

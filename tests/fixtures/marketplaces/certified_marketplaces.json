@@ -1,0 +1,57 @@
+{
+  "us": {
+    "dealUrl": "https://www.audible.com/dailydeal",
+    "finalUrl": "https://www.audible.com/pd/Signal-Fire-Audiobook/ABC1234567",
+    "title": "Signal Fire",
+    "author": "Jane Story",
+    "salePrice": 4.99,
+    "listPrice": 14.95,
+    "productId": "ABC1234567",
+    "audibleUrl": "https://www.audible.com/pd/Signal-Fire-Audiobook/ABC1234567",
+    "priceDisplay": "Price: $4.99 (-67%, list price $14.95)"
+  },
+  "uk": {
+    "dealUrl": "https://www.audible.co.uk/dailydeal",
+    "finalUrl": "https://www.audible.co.uk/pd/Glass-Harbor-Audiobook/UKC1234567",
+    "title": "Glass Harbor",
+    "author": "Nora Vale",
+    "salePrice": 2.99,
+    "listPrice": 12.99,
+    "productId": "UKC1234567",
+    "audibleUrl": "https://www.audible.co.uk/pd/Glass-Harbor-Audiobook/UKC1234567",
+    "priceDisplay": "Price: £2.99 (-77%, list price £12.99)"
+  },
+  "de": {
+    "dealUrl": "https://www.audible.de/dailydeal",
+    "finalUrl": "https://www.audible.de/pd/Die-Stadt-aus-Glas-Hoerbuch/DE12345678",
+    "title": "Die Stadt aus Glas",
+    "author": "Mira Falk",
+    "salePrice": 4.99,
+    "listPrice": 19.95,
+    "productId": "DE12345678",
+    "audibleUrl": "https://www.audible.de/pd/Die-Stadt-aus-Glas-Hoerbuch/DE12345678",
+    "priceDisplay": "Price: €4.99 (-75%, list price €19.95)"
+  },
+  "ca": {
+    "dealUrl": "https://www.audible.ca/dailydeal",
+    "finalUrl": "https://www.audible.ca/pd/North-Channel-Audiobook/CAN1234567",
+    "title": "North Channel",
+    "author": "Alex Mercer",
+    "salePrice": 3.99,
+    "listPrice": 15.0,
+    "productId": "CAN1234567",
+    "audibleUrl": "https://www.audible.ca/pd/North-Channel-Audiobook/CAN1234567",
+    "priceDisplay": "Price: $3.99 (-73%, list price $15.00)"
+  },
+  "au": {
+    "dealUrl": "https://www.audible.com.au/dailydeal",
+    "finalUrl": "https://www.audible.com.au/pd/Storm-Atlas-Audiobook/AUS1234567",
+    "title": "Storm Atlas",
+    "author": "Clare Holden",
+    "salePrice": 4.49,
+    "listPrice": 16.99,
+    "productId": "AUS1234567",
+    "audibleUrl": "https://www.audible.com.au/pd/Storm-Atlas-Audiobook/AUS1234567",
+    "priceDisplay": "Price: $4.49 (-74%, list price $16.99)"
+  }
+}
