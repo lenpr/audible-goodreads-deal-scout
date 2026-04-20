@@ -12,6 +12,29 @@ Use this skill when the user wants to:
 - personalize the result with a Goodreads CSV and/or freeform notes
 - finalize and optionally deliver the result into a configured channel
 
+## Runtime output contract
+
+The skill runtime must return JSON only in this shape:
+
+```json
+{
+  "schemaVersion": 1,
+  "goodreads": {
+    "status": "resolved | no_match | lookup_failed",
+    "url": "string | null",
+    "title": "string | null",
+    "author": "string | null",
+    "averageRating": "number | null",
+    "ratingsCount": "integer | null",
+    "evidence": "string | null"
+  },
+  "fit": {
+    "status": "written | not_applicable | unavailable",
+    "sentence": "string | null"
+  }
+}
+```
+
 ## Use the Python prep layer first
 
 Do not fetch Audible yourself in model text. Always start with the prep layer:
@@ -60,7 +83,7 @@ cd "{baseDir}" && python3 -m audible_goodreads_deal_scout.public_cli setup \
   [--register-cron]
 ```
 
-Use interactive `setup` only when the user explicitly wants prompt-by-prompt CLI onboarding.
+Use interactive `setup` only when the user explicitly wants prompt-by-prompt CLI onboarding. Otherwise prefer the non-interactive command with concrete flags.
 
 ## Ready flow
 

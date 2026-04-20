@@ -1,72 +1,153 @@
 # Audible Goodreads Deal Scout
 
-`audible-goodreads-deal-scout` helps you decide whether an Audible daily promotion is worth your attention.
+`audible-goodreads-deal-scout` helps you decide whether an Audible daily promotion is actually worth your attention.
 
-Instead of just showing today’s deal, it tries to answer:
-- Is this book broadly well regarded on Goodreads?
-- Have I already read it, or is it already on my `to-read` shelf?
-- Based on my notes and reading history, does this feel like a strong fit or a bad fit?
-- Should this be delivered to me, or quietly skipped?
+It is built for people who do **not** want raw deal spam. Instead of only showing the discounted book, it combines:
+- the public Goodreads rating
+- your Goodreads shelves, if you provide a CSV
+- your own reading preferences, if you provide notes
+- a delivery policy that decides what should be sent and what should be skipped quietly
 
-## What you get out of it
+## Start here
 
-There are three levels of value:
+Use this skill if you want:
+- a daily Audible deal filter instead of a daily Audible deal feed
+- a way to suppress books you already read
+- a way to fast-track books you already saved on Goodreads
+- a short fit paragraph that explains why a book may work for you, and what may not
 
-1. **Public signal only**
-- No Goodreads CSV
-- No notes
-- You still get a basic recommendation based on the Goodreads public rating
+You get the most value from it if you provide both:
+- a Goodreads library export CSV
+- a short notes file about your taste
 
-2. **Taste notes**
-- Add a short notes file describing what you like and dislike
-- You still get the Goodreads public check, but now the fit paragraph becomes more personal
+You can still use it without both:
+- no CSV, no notes: public Goodreads signal only
+- notes only: public Goodreads signal plus a notes-driven fit paragraph
+- CSV only: shelf logic plus fit from your Goodreads history
 
-3. **Full value**
-- Add your Goodreads library export CSV
-- Optionally add personal notes too
-- The skill can now suppress books you already read, fast-track books on your `to-read` shelf, and write a much better fit paragraph
+## 5-minute setup
 
-If you want the best result, use both:
-- a Goodreads CSV
-- a short notes file
+If you want one straightforward setup path, use this:
+
+1. Pick your Audible store. If you do nothing, it defaults to `us`.
+2. Export your Goodreads library CSV if you want personalization.
+3. Optionally create a short notes file with what you like and dislike.
+4. Run:
+
+```bash
+python3 -m audible_goodreads_deal_scout.public_cli setup
+```
+
+5. Then evaluate the current deal:
+
+```bash
+python3 -m audible_goodreads_deal_scout.public_cli prepare \
+  --config-path .audible-goodreads-deal-scout/config.json
+```
+
+## How to get your Goodreads CSV
+
+If you use Goodreads, the skill gets much stronger when you export your library.
+
+The usual path is:
+1. Open `My Books`
+2. Open `Import and Export`
+3. Choose `Export Library`
+4. Wait for Goodreads to generate the file
+5. Download the CSV and point the skill at it with `goodreadsCsvPath`
+
+Why the CSV matters:
+- it tells the skill what you already marked as `read`
+- it tells the skill what is already on your `to-read` shelf
+- it gives the fit step access to your ratings and written reviews
+
+If your export is old, the skill will warn you, but it can still run.
+
+## If you do not use Goodreads
+
+That is still a valid setup.
+
+You can use a notes-only workflow:
+- no Goodreads CSV
+- one strong text file about your taste
+
+The better the notes, the better the fit paragraph.
+
+Good notes usually include:
+- 5 to 15 books or authors you genuinely liked
+- a few examples of books you disliked and why
+- genres you seek out
+- genres you avoid
+- pacing preferences
+- tone preferences
+- what feels too sentimental, too slow, too commercial, too dark, too clever, too flat, and so on
+
+A strong notes file sounds like you talking to a smart bookseller, not like metadata.
+
+Useful:
+
+```md
+I like morally serious fiction, political tension, and books with ideas.
+I often like Orwell, Ishiguro, Le Guin, Vonnegut, and literary sci-fi.
+I lose interest when a book gets too sentimental or too plot-mechanical.
+I like books that are sharp, unsparing, and a bit strange, but still readable.
+```
+
+Too weak:
+
+```md
+I like good books.
+```
+
+If you do not have Goodreads, the best setup is:
+- a thoughtful notes file
+- the default public Goodreads check
+- `deliveryPolicy: positive_only`
+
+## Which mode should I use?
+
+| Mode | What you provide | What you get |
+| --- | --- | --- |
+| `public` | nothing personal | Audible + Goodreads public score only |
+| `notes` | a notes file or pasted text | Goodreads public score plus notes-driven fit |
+| `full` | Goodreads CSV, optionally notes | shelf-aware suppression/recommendation plus richer fit |
 
 ## How the recommendation works
 
 At a high level:
 - the skill fetches the current Audible daily promotion
-- it finds the matching Goodreads book page and rating
-- it compares the book against your Goodreads CSV if you provided one
-- it optionally uses your notes to shape the fit paragraph
+- it resolves the matching Goodreads page and public rating
+- it applies your Goodreads shelf rules if you provided a CSV
+- it uses your notes and/or Goodreads history to shape the fit paragraph
 - it decides whether to deliver the result based on your delivery policy
 
-### Goodreads threshold
+### The default Goodreads threshold
 
 The default threshold is `3.8`.
 
 That means:
-- a Goodreads average rating of `3.80` or lower is treated as below your quality cutoff
+- a public Goodreads average rating of `3.80` or lower is treated as below your quality cutoff
 - a rating above `3.8` is eligible
 
-This is the **public Goodreads average rating**, not your personal rating.
+This is the **public Goodreads average**, not your own rating.
 
-If you want to be stricter:
-- try `4.0`
+Good starting points:
+- `4.0` if you want to be stricter
+- `3.8` if you want a balanced default
+- `3.6` or `3.7` if you want more deals to pass through
 
-If you want more deals to pass through:
-- try `3.6` or `3.7`
-
-### Shelf rules
+### Goodreads shelf rules
 
 If you provide a Goodreads CSV:
 - `read` => suppress
 - `currently-reading` => suppress
 - `to-read` => recommend immediately
 
-That `to-read` override is intentional. If you already saved the book for later, that is treated as a strong positive signal.
+That `to-read` override is intentional. If you already saved the book for later, that is treated as a strong positive signal and it can override the public Goodreads threshold.
 
-## Supported Audible stores
+## Supported marketplaces
 
-Right now the code supports these marketplace keys:
+Supported and fixture-tested marketplace keys:
 - `us`
 - `uk`
 - `de`
@@ -75,7 +156,17 @@ Right now the code supports these marketplace keys:
 
 If you do nothing, the default is `us`.
 
-When you set `audibleMarketplace`, use one of those short keys. Example:
+Support here means the repo has fixture-backed coverage for:
+- daily-promotion detection
+- discounted price extraction
+- book identity extraction
+
+Live marketplace behavior can still vary. A supported store may still return:
+- no active promotion
+- a blocked page
+- a page-layout drift error
+
+If you want a non-US store, set `audibleMarketplace` to one of the keys above:
 
 ```json
 {
@@ -83,19 +174,89 @@ When you set `audibleMarketplace`, use one of those short keys. Example:
 }
 ```
 
-## What a notes file can look like
+## Privacy and data use
 
-A notes file does **not** need a strict format. It can just be freeform text.
+This part should be explicit.
 
-Example: `examples/preferences.example.md`
+- The Python prep layer reads your Goodreads CSV locally.
+- The Python prep layer also reads your notes file locally.
+- The model step may use fit-context data unless you set `privacyMode` to `minimal`.
+- In `privacyMode: "minimal"`, the skill still uses local shelf logic, but it does **not** pass your personal CSV or notes content into the model fit step.
+- Delivery targets are whatever you configure in your own OpenClaw runtime.
 
-You can write things like:
-- authors you often like
-- genres you usually avoid
-- whether you prefer literary fiction, thrillers, sci-fi, memoir, etc.
-- what kinds of books you find too slow, too sentimental, too formulaic, too commercial
+If you want the safest default for personal data sharing, use:
 
-It is fine if the file is a bit messy. The point is to give the model a usable taste profile.
+```json
+{
+  "privacyMode": "minimal"
+}
+```
+
+## What a notes file should look like
+
+It does **not** need strict structure. A short, honest, messy note is fine.
+
+Example file: `examples/preferences.example.md`
+
+Good notes usually include:
+- books or authors you reliably like
+- genres or tones you usually avoid
+- pacing preferences
+- whether you like literary, commercial, cerebral, emotional, satirical, dark, warm, and so on
+
+Weak notes are still accepted, but they produce weaker fit output. For example, `I like good books` is valid input, but not very useful evidence.
+
+## Delivery policies
+
+`deliveryPolicy` controls how noisy the skill is:
+
+| Policy | Best for | Behavior |
+| --- | --- | --- |
+| `positive_only` | most people | send only likely fits |
+| `summary_on_non_match` | people who want visibility into skips | send full recommendations, but short summary cards for suppressions/errors |
+| `always_full` | logging and audits | send every final result in full |
+
+Recommended default:
+- `positive_only`
+
+That gives the best signal-to-noise ratio for most users.
+
+## Telegram, WhatsApp, and other channels
+
+This repository does **not** ship its own Telegram or WhatsApp connector.
+
+Instead, it uses the OpenClaw message surface:
+- `openclaw message send --channel ... --target ...`
+
+That means delivery works whenever your OpenClaw environment already has a supported channel configured.
+
+### Telegram
+
+If your OpenClaw setup supports Telegram delivery, configure:
+
+```json
+{
+  "deliveryChannel": "telegram",
+  "deliveryTarget": "-1000000000000"
+}
+```
+
+`deliveryTarget` is the Telegram chat or channel id you want to post into.
+
+### WhatsApp
+
+WhatsApp can work **only if** your OpenClaw install already exposes a WhatsApp-capable message channel.
+
+In that case the pattern is the same:
+
+```json
+{
+  "deliveryChannel": "whatsapp",
+  "deliveryTarget": "<your-whatsapp-target>"
+}
+```
+
+This repo does not create that WhatsApp channel. It only uses it if your OpenClaw runtime already provides it.
 
 ## What the output looks like
 
@@ -130,66 +291,9 @@ Fit: You marked it as read on Goodreads.
 Audible: https://www.audible.com/pd/...
 ```
 
-## Delivery behavior
+## Advanced CLI usage
 
-You can use the skill manually in chat, or wire it into a delivery channel.
-
-`deliveryPolicy` controls what gets sent:
-- `positive_only`: only send likely fits
-- `always_full`: send every evaluated result in full
-- `summary_on_non_match`: send full recommendations, but short summary cards for suppressions/errors
-
-Default recommendation:
-- use `positive_only`
-
-That gives the best signal-to-noise ratio for most people.
-
-## Telegram, WhatsApp, and other channels
-
-This repository does **not** bundle its own Telegram or WhatsApp connector.
-
-Instead, it uses the OpenClaw message surface:
-- `openclaw message send --channel ... --target ...`
-
-So delivery works whenever your OpenClaw environment already has a supported channel configured.
-
-### Telegram
-
-If your OpenClaw setup supports Telegram delivery, configure:
-
-```json
-{
-  "deliveryChannel": "telegram",
-  "deliveryTarget": "-1000000000000"
-}
-```
-
-`deliveryTarget` is the Telegram chat/channel id you want to post into.
-
-### WhatsApp
-
-WhatsApp can work **only if** your OpenClaw install already exposes a WhatsApp-capable message channel.
-
-In that case, the pattern is the same:
-
-```json
-{
-  "deliveryChannel": "whatsapp",
-  "deliveryTarget": "<your-whatsapp-target>"
-}
-```
-
-But this repo does not itself create or ship that WhatsApp channel. It only calls the channel if your OpenClaw runtime provides it.
-
-## Quick start
-
-From the repository root:
-
-```bash
-python3 -m audible_goodreads_deal_scout.public_cli setup
-```
-
-If you want a scripted setup instead:
+If you prefer scripted setup instead of interactive setup:
 
 ```bash
 python3 -m audible_goodreads_deal_scout.public_cli setup \
@@ -204,29 +308,12 @@ python3 -m audible_goodreads_deal_scout.public_cli setup \
   --delivery-policy positive_only
 ```
 
-## Core commands
-
-Prepare the current deal:
-
-```bash
-python3 -m audible_goodreads_deal_scout.public_cli prepare \
-  --config-path .audible-goodreads-deal-scout/config.json
-```
-
-Useful helpers:
+Useful helper commands:
 
 ```bash
 python3 -m audible_goodreads_deal_scout.public_cli show-csv-headers "/absolute/path/to/goodreads_library_export.csv"
 python3 -m audible_goodreads_deal_scout.public_cli measure-context --goodreads-csv "/absolute/path/to/goodreads_library_export.csv" --output /tmp/fit-context.json
 python3 -m audible_goodreads_deal_scout.public_cli publish-audit --version 0.1.0
-```
-
-Finalize a runtime Goodreads result:
-
-```bash
-python3 -m audible_goodreads_deal_scout.public_cli finalize \
-  --prepare-json .audible-goodreads-deal-scout/artifacts/current/prepare-result.json \
-  --runtime-output /tmp/runtime-output.json
 ```
 
 Finalize and deliver in one step:
@@ -238,7 +325,7 @@ python3 -m audible_goodreads_deal_scout.public_cli run-and-deliver \
   --runtime-output /tmp/runtime-output.json
 ```
 
-## Files in this repository
+## Repository structure
 
 - `SKILL.md`: agent-facing runtime instructions
 - `audible_goodreads_deal_scout/core.py`: prep/orchestration logic
@@ -247,9 +334,17 @@ python3 -m audible_goodreads_deal_scout.public_cli run-and-deliver \
 - `audible_goodreads_deal_scout/public_cli.py`: setup and CLI entrypoint
 - `config.example.json`: public config example
 - `examples/preferences.example.md`: sample notes file
-- `tests/test_audible_goodreads_deal_scout.py`: skill-specific tests
+- `docs/release-checklist.md`: release checklist for publishable builds
 
 ## Publish to ClawHub
+
+Before publishing, run:
+
+```bash
+python3 -m audible_goodreads_deal_scout.public_cli publish-audit --version 0.1.0 --tags latest
+```
+
+Then publish:
 
 ```bash
 clawhub login
@@ -261,12 +356,6 @@ clawhub skill publish . \
   --tags latest
 ```
 
-Before publishing, run:
-
-```bash
-python3 -m audible_goodreads_deal_scout.public_cli publish-audit --version 0.1.0 --tags latest
-```
-
 ## Why this is worth publishing
 
 The value is not just “show me today’s Audible deal.”
@@ -274,6 +363,6 @@ The value is not just “show me today’s Audible deal.”
 The real value is:
 - filtering instead of deal spam
 - combining public quality with personal fit
-- respecting shelves like `read`, `currently-reading`, and `to-read`
+- respecting `read`, `currently-reading`, and `to-read`
 - optional proactive delivery into a real channel
 - graceful handling of suppressions and lookup failures

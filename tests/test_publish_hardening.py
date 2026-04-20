@@ -33,6 +33,15 @@ def marketplace_fetcher(marketplace: str):
 
 
 class PublishHardeningTests(unittest.TestCase):
+    def test_readme_covers_goodreads_export_and_notes_only_setup(self) -> None:
+        readme = Path(__file__).resolve().parents[1] / "README.md"
+        content = readme.read_text(encoding="utf-8")
+        self.assertIn("How to get your Goodreads CSV", content)
+        self.assertIn("Open `My Books`", content)
+        self.assertIn("Open `Import and Export`", content)
+        self.assertIn("If you do not use Goodreads", content)
+        self.assertIn("A strong notes file sounds like you talking to a smart bookseller", content)
+
     def test_certified_marketplaces_manifest_matches_supported_marketplaces(self) -> None:
         manifest = read_fixture_json("marketplaces", "certified_marketplaces.json")
         self.assertEqual(sorted(manifest), sorted(core.SUPPORTED_MARKETPLACES))
