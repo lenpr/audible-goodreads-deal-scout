@@ -5,11 +5,16 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
-
-def _core():
-    from . import core
-
-    return core
+from .constants import DEFAULT_DELIVERY_POLICY, DEFAULT_FRESHNESS_DAYS, DEFAULT_THRESHOLD, SUPPORTED_DELIVERY_POLICIES, SUPPORTED_PRIVACY_MODES
+from .settings import (
+    config_template,
+    default_storage_dir,
+    load_config,
+    resolve_notes_text,
+    validate_marketplace,
+    validate_timezone,
+)
+from .shared import atomic_write_text, ensure_python_version, normalize_space, write_json_atomic
 
 
 def build_cron_message(config_path: Path, state_file: Path) -> str:
@@ -28,8 +33,7 @@ def build_cron_command(
     name: str | None = None,
     cron_expr: str | None = None,
 ) -> list[str]:
-    core = _core()
-    core.validate_timezone(spec)
+    validate_timezone(spec)
     return [
         openclaw_bin,
         "--no-color",
@@ -80,16 +84,15 @@ def find_matching_cron_job(
     timezone_name: str,
     message: str,
 ) -> dict[str, Any] | None:
-    core = _core()
     for job in jobs:
-        job_name = core.normalize_space(str(job.get("name") or ""))
+        job_name = normalize_space(str(job.get("name") or ""))
         schedule = job.get("schedule") if isinstance(job.get("schedule"), dict) else {}
         payload = job.get("payload") if isinstance(job.get("payload"), dict) else {}
         if (
             job_name == name
-            and core.normalize_space(str(schedule.get("cron") or "")) == cron_expr
-            and core.normalize_space(str(schedule.get("tz") or "")) == timezone_name
-            and core.normalize_space(str(payload.get("message") or payload.get("text") or "")) == message
+            and normalize_space(str(schedule.get("cron") or "")) == cron_expr
+            and normalize_space(str(schedule.get("tz") or "")) == timezone_name
+            and normalize_space(str(payload.get("message") or payload.get("text") or "")) == message
         ):
             return job
     return None
@@ -138,36 +141,35 @@ def setup_configuration(
     openclaw_bin: str = "openclaw",
     register_cron: bool = False,
 ) -> dict[str, Any]:
-    core = _core()
-    core.ensure_python_version()
-    marketplace = core.normalize_space(str(options.get("audibleMarketplace") or "us")).lower() or "us"
-    spec = core.validate_marketplace(marketplace)
-    storage_dir = Path(str(options.get("storageDir") or core.default_storage_dir())).expanduser()
+    ensure_python_version()
+    marketplace = normalize_space(str(options.get("audibleMarketplace") or "us")).lower() or "us"
+    spec = validate_marketplace(marketplace)
+    storage_dir = Path(str(options.get("storageDir") or default_storage_dir())).expanduser()
     config_path = Path(str(options.get("configPath") or storage_dir / "config.json")).expanduser()
     state_file = Path(str(options.get("stateFile") or storage_dir / "state.json")).expanduser()
     preferences_path = Path(str(options.get("preferencesPath") or storage_dir / "preferences.md")).expanduser()
-    threshold = float(options.get("threshold") or core.DEFAULT_THRESHOLD)
-    privacy_mode = core.normalize_space(str(options.get("privacyMode") or "normal")).lower() or "normal"
-    notes_file = core.normalize_space(str(options.get("notesFile") or ""))
-    notes_text = core.resolve_notes_text(notes_file, str(options.get("notesText") or ""))
-    goodreads_csv = core.normalize_space(str(options.get("goodreadsCsvPath") or ""))
+    threshold = float(options.get("threshold") or DEFAULT_THRESHOLD)
+    privacy_mode = normalize_space(str(options.get("privacyMode") or "normal")).lower() or "normal"
+    notes_file = normalize_space(str(options.get("notesFile") or ""))
+    notes_text = resolve_notes_text(notes_file, str(options.get("notesText") or ""))
+    goodreads_csv = normalize_space(str(options.get("goodreadsCsvPath") or ""))
     daily_enabled = bool(options.get("dailyAutomation"))
-    cron_expr = core.normalize_space(str(options.get("dailyCron") or spec["defaultCron"]))
+    cron_expr = normalize_space(str(options.get("dailyCron") or spec["defaultCron"]))
     artifact_dir = Path(str(options.get("artifactDir") or storage_dir / "artifacts" / "current")).expanduser()
-    delivery_channel = core.normalize_space(str(options.get("deliveryChannel") or ""))
-    delivery_target = core.normalize_space(str(options.get("deliveryTarget") or ""))
-    delivery_policy = core.normalize_delivery_policy(str(options.get("deliveryPolicy") or core.DEFAULT_DELIVERY_POLICY))
+    delivery_channel = normalize_space(str(options.get("deliveryChannel") or ""))
+    delivery_target = normalize_space(str(options.get("deliveryTarget") or ""))
+    delivery_policy = normalize_delivery_policy(str(options.get("deliveryPolicy") or DEFAULT_DELIVERY_POLICY))
     if notes_text:
         notes_text = notes_text.rstrip() + "\n"
-    config_payload = core.config_template(
+    config_payload = config_template(
         audibleMarketplace=spec["key"],
         threshold=threshold,
         goodreadsCsvPath=goodreads_csv or None,
         preferencesPath=str(preferences_path) if notes_text else None,
-        privacyMode=privacy_mode if privacy_mode in core.SUPPORTED_PRIVACY_MODES else "normal",
+        privacyMode=privacy_mode if privacy_mode in SUPPORTED_PRIVACY_MODES else "normal",
         stateFile=str(state_file) if daily_enabled else None,
         artifactDir=str(artifact_dir),
-        freshnessDays=int(options.get("freshnessDays") or core.DEFAULT_FRESHNESS_DAYS),
+        freshnessDays=int(options.get("freshnessDays") or DEFAULT_FRESHNESS_DAYS),
         csvColumns=options.get("csvColumns") or {},
         audibleDealUrl=options.get("audibleDealUrl") or None,
         dailyCron=cron_expr if daily_enabled else None,
@@ -199,9 +201,9 @@ def setup_configuration(
 
     try:
         config_path.parent.mkdir(parents=True, exist_ok=True)
-        core.write_json_atomic(config_path, config_payload)
+        write_json_atomic(config_path, config_payload)
         if notes_text:
-            core.atomic_write_text(preferences_path, notes_text)
+            atomic_write_text(preferences_path, notes_text)
     except OSError:
         return {**manual_result, "manualOnly": True}
 
@@ -223,11 +225,10 @@ def resolve_delivery_settings(
     delivery_channel: str | None = None,
     delivery_target: str | None = None,
 ) -> tuple[Path, str, str, str]:
-    core = _core()
-    path, config = core.load_config(config_path)
-    channel = core.normalize_space(str(delivery_channel or config.get("deliveryChannel") or ""))
-    target = core.normalize_space(str(delivery_target or config.get("deliveryTarget") or ""))
-    policy = core.normalize_delivery_policy(str(config.get("deliveryPolicy") or core.DEFAULT_DELIVERY_POLICY))
+    path, config = load_config(config_path)
+    channel = normalize_space(str(delivery_channel or config.get("deliveryChannel") or ""))
+    target = normalize_space(str(delivery_target or config.get("deliveryTarget") or ""))
+    policy = normalize_delivery_policy(str(config.get("deliveryPolicy") or DEFAULT_DELIVERY_POLICY))
     if not channel:
         raise RuntimeError(
             f"No delivery channel configured. Set deliveryChannel in {path} or pass --delivery-channel."
@@ -244,10 +245,16 @@ def resolve_delivery_policy(
     config_path: Path | None,
     delivery_policy: str | None = None,
 ) -> tuple[Path, str]:
-    core = _core()
-    path, config = core.load_config(config_path)
-    policy = core.normalize_delivery_policy(delivery_policy or str(config.get("deliveryPolicy") or core.DEFAULT_DELIVERY_POLICY))
+    path, config = load_config(config_path)
+    policy = normalize_delivery_policy(delivery_policy or str(config.get("deliveryPolicy") or DEFAULT_DELIVERY_POLICY))
     return path, policy
+
+
+def normalize_delivery_policy(value: str | None) -> str:
+    normalized = normalize_space(str(value or "")).lower() or DEFAULT_DELIVERY_POLICY
+    if normalized not in SUPPORTED_DELIVERY_POLICIES:
+        return DEFAULT_DELIVERY_POLICY
+    return normalized
 
 
 def deliver_message(

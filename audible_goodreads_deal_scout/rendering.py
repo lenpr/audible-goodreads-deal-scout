@@ -1,12 +1,50 @@
 from __future__ import annotations
 
+import re
 from typing import Any
 
+from .constants import UNICODE_BOLD_TRANSLATION
+from .delivery import normalize_delivery_policy
+from .settings import SUPPORTED_MARKETPLACES
+from .shared import normalize_space
 
-def _core():
-    from . import core
 
-    return core
+def price_display(audible: dict[str, Any], marketplace_key: str) -> str:
+    spec = SUPPORTED_MARKETPLACES.get(marketplace_key, SUPPORTED_MARKETPLACES["us"])
+    currency_symbol = spec.get("currencySymbol") or ""
+    sale_price = audible.get("salePrice")
+    list_price = audible.get("listPrice")
+    if sale_price is not None and list_price is not None and float(list_price) > 0:
+        discount = max(0, round((1 - (float(sale_price) / float(list_price))) * 100))
+        return f"Price: {currency_symbol}{float(sale_price):.2f} (-{discount}%, list price {currency_symbol}{float(list_price):.2f})"
+    if sale_price is not None:
+        return f"Price: {currency_symbol}{float(sale_price):.2f}"
+    if audible.get("memberHidden"):
+        return "Price: member deal / hidden"
+    return "Price: unavailable"
+
+
+def offer_description(audible: dict[str, Any]) -> str:
+    summary = normalize_space(str(audible.get("summary") or ""))
+    if not summary:
+        return ""
+    if len(summary) <= 520:
+        return summary
+    return summary[:517].rsplit(" ", 1)[0].rstrip(" ,;:") + "…"
+
+
+def format_runtime(runtime: str) -> str:
+    raw = normalize_space(runtime)
+    match = re.fullmatch(r"(\d+)\s*hrs?\s*and\s*(\d+)\s*mins?", raw, re.I)
+    if not match:
+        return raw
+    hours = int(match.group(1))
+    minutes = int(match.group(2))
+    return f"{hours}:{minutes:02d} hrs"
+
+
+def bold_visible_text(value: str) -> str:
+    return str(value or "").translate(UNICODE_BOLD_TRANSLATION)
 
 
 def render_message_layout(
@@ -52,34 +90,33 @@ def summary_fit_text(final_result: dict[str, Any]) -> str:
 
 
 def render_final_message(final_result: dict[str, Any]) -> str:
-    core = _core()
     audible = final_result.get("audible") or {}
     metadata = final_result.get("metadata") or {}
     goodreads = final_result.get("goodreads") or {}
     warnings = list(final_result.get("warnings") or [])
     marketplace_label = metadata.get("marketplaceLabel") or f"Audible {str(metadata.get('marketplace') or '').upper()}"
-    store_date = core.normalize_space(str(metadata.get("storeLocalDate") or ""))
+    store_date = normalize_space(str(metadata.get("storeLocalDate") or ""))
     header = f"{marketplace_label} Daily Promotion" + (f" — {store_date}" if store_date else "")
     marketplace_key = str(metadata.get("marketplace") or "us")
-    title_line = f"{core.bold_visible_text(str(audible.get('title', 'Unknown Title')))} — {audible.get('author', 'Unknown Author')}"
+    title_line = f"{bold_visible_text(str(audible.get('title', 'Unknown Title')))} — {audible.get('author', 'Unknown Author')}"
     if audible.get("year"):
         title_line += f" ({audible['year']})"
-    metadata_lines = [core.price_display(audible, marketplace_key)]
+    metadata_lines = [price_display(audible, marketplace_key)]
     if goodreads.get("status") == "resolved" and goodreads.get("averageRating") is not None:
         rating_line = f"Goodreads rating: {goodreads['averageRating']:.2f}"
         ratings_count = goodreads.get("ratingsCount")
         if ratings_count:
             rating_line += f" ({int(ratings_count):,} ratings)"
         metadata_lines.append(rating_line)
-    runtime = core.format_runtime(str(audible.get("runtime") or ""))
+    runtime = format_runtime(str(audible.get("runtime") or ""))
     if runtime and runtime.lower() != "unknown":
         metadata_lines.append(f"Length: {runtime}")
-    genres = [core.normalize_space(str(label)) for label in list(audible.get("genres") or []) if core.normalize_space(str(label))]
+    genres = [normalize_space(str(label)) for label in list(audible.get("genres") or []) if normalize_space(str(label))]
     if genres:
         metadata_lines.append(f"Genre: {', '.join(genres)}")
     if final_result["status"] != "recommend":
         metadata_lines.append(f"Reason: {final_result.get('reasonText') or final_result.get('reasonCode')}")
-    fit_sentence = core.normalize_space(str(final_result.get("fitSentence") or ""))
+    fit_sentence = normalize_space(str(final_result.get("fitSentence") or ""))
     footer_lines: list[str] = []
     if audible.get("audibleUrl"):
         footer_lines.append(f"Audible: {audible['audibleUrl']}")
@@ -89,7 +126,7 @@ def render_final_message(final_result: dict[str, Any]) -> str:
         header=header,
         title_line=title_line,
         metadata_lines=metadata_lines,
-        description_text=core.offer_description(audible),
+        description_text=offer_description(audible),
         fit_text=fit_sentence or None,
         footer_lines=footer_lines,
         warnings=warnings,
@@ -97,14 +134,13 @@ def render_final_message(final_result: dict[str, Any]) -> str:
 
 
 def render_delivery_summary_message(final_result: dict[str, Any]) -> str:
-    core = _core()
     audible = final_result.get("audible") or {}
     metadata = final_result.get("metadata") or {}
     warnings = list(final_result.get("warnings") or [])
     marketplace_label = metadata.get("marketplaceLabel") or f"Audible {str(metadata.get('marketplace') or '').upper()}"
-    store_date = core.normalize_space(str(metadata.get("storeLocalDate") or ""))
+    store_date = normalize_space(str(metadata.get("storeLocalDate") or ""))
     header = f"{marketplace_label} Daily Promotion" + (f" — {store_date}" if store_date else "")
-    title_line = f"{core.bold_visible_text(str(audible.get('title', 'Unknown Title')))} — {audible.get('author', 'Unknown Author')}"
+    title_line = f"{bold_visible_text(str(audible.get('title', 'Unknown Title')))} — {audible.get('author', 'Unknown Author')}"
     if audible.get("year"):
         title_line += f" ({audible['year']})"
     footer_lines: list[str] = []
@@ -122,8 +158,7 @@ def render_delivery_summary_message(final_result: dict[str, Any]) -> str:
 
 
 def build_delivery_plan(final_result: dict[str, Any], policy: str) -> dict[str, Any]:
-    core = _core()
-    normalized_policy = core.normalize_delivery_policy(policy)
+    normalized_policy = normalize_delivery_policy(policy)
     status = str(final_result.get("status") or "")
     if normalized_policy == "positive_only":
         if status == "recommend":

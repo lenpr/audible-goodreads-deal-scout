@@ -159,7 +159,7 @@ class AudibleGoodreadsDealScoutTests(unittest.TestCase):
     def test_setup_returns_manual_instructions_when_write_fails(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp = Path(tmp_dir)
-            with mock.patch.object(core, "write_json_atomic", side_effect=OSError("denied")):
+            with mock.patch.object(delivery_mod, "write_json_atomic", side_effect=OSError("denied")):
                 result = core.setup_configuration({"storageDir": str(tmp), "audibleMarketplace": "us"})
         self.assertFalse(result["written"])
         self.assertTrue(result["manualOnly"])

@@ -4,13 +4,9 @@ import csv
 import gzip
 import html
 import json
-import os
 import re
-import subprocess
 import sys
-import tempfile
 import time
-import unicodedata
 import urllib.parse
 import urllib.request
 import zlib
@@ -18,8 +14,26 @@ from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any, Callable
 from urllib.error import HTTPError, URLError
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+from zoneinfo import ZoneInfo
 
+from .constants import (
+    AUDIBLE_BLOCK_MARKERS,
+    CSV_ROLE_DEFAULTS,
+    DEFAULT_DELIVERY_POLICY,
+    DEFAULT_FRESHNESS_DAYS,
+    DEFAULT_NOTES_WARNING_CHARS,
+    DEFAULT_THRESHOLD,
+    FIT_MODEL_UNAVAILABLE,
+    FIT_MODEL_UNAVAILABLE_TO_READ,
+    FIT_NO_PERSONAL_DATA,
+    FIT_REVIEW_SUMMARY_LIMIT,
+    HTTP_USER_AGENT,
+    PRICE_TOKEN_RE,
+    PROMOTION_MARKERS,
+    SUPPORTED_PRIVACY_MODES,
+    SUPPORTED_DELIVERY_POLICIES,
+    UNICODE_BOLD_TRANSLATION,
+)
 from .delivery import (
     build_cron_command,
     build_cron_message,
@@ -32,114 +46,43 @@ from .delivery import (
     setup_configuration,
 )
 from .rendering import build_delivery_plan, render_delivery_summary_message, render_final_message
-
-
-MIN_PYTHON = (3, 9)
-HTTP_USER_AGENT = "OpenClaw Audible Goodreads Deal Scout/1.0"
-DEFAULT_THRESHOLD = 3.8
-DEFAULT_FRESHNESS_DAYS = 180
-DEFAULT_NOTES_WARNING_CHARS = 50_000
-FIT_REVIEW_SUMMARY_LIMIT = 500
-SUPPORTED_PRIVACY_MODES = {"normal", "minimal"}
-SUPPORTED_DELIVERY_POLICIES = {"positive_only", "always_full", "summary_on_non_match"}
-DEFAULT_DELIVERY_POLICY = "positive_only"
-FIT_NO_PERSONAL_DATA = "Fit: No personal preference data was configured, so this recommendation is based only on the public Goodreads score."
-FIT_MODEL_UNAVAILABLE = "Fit: Personalized fit feedback is unavailable right now, but the recommendation decision still completed."
-FIT_MODEL_UNAVAILABLE_TO_READ = "Fit: Strong match, on your 'to-read' shelf. Personalized fit feedback is unavailable right now, but this is already on the books you explicitly want to read."
-AUTHOR_SUFFIXES = {"jr", "sr", "ii", "iii", "iv", "v"}
-AUTHOR_ROLE_PATTERNS = (
-    r"\bnarrated by\b",
-    r"\bforeword by\b",
-    r"\bafterword by\b",
-    r"\bintroduction by\b",
-    r"\bwith\b",
-    r"\bfull cast\b",
+from .settings import (
+    SUPPORTED_MARKETPLACES,
+    config_template,
+    default_artifact_dir,
+    default_config_path,
+    default_preferences_path,
+    default_state_path,
+    default_storage_dir,
+    load_config,
+    parse_csv_column_overrides,
+    resolve_notes_text,
+    skill_root,
+    validate_marketplace,
+    validate_timezone,
+    workspace_root,
 )
-AUDIBLE_BLOCK_MARKERS = (
-    "captcha",
-    "robot check",
-    "automated access",
+from .shared import (
+    approx_token_count,
+    atomic_write_text,
+    ensure_parent,
+    ensure_python_version,
+    normalize_author_key,
+    normalize_review_text,
+    normalize_space,
+    normalized_key,
+    now_iso,
+    parse_float,
+    parse_int_value,
+    parse_localized_price,
+    parse_rating,
+    prompt,
+    read_json,
+    split_author_roles,
+    strip_html,
+    truncate_text,
+    write_json_atomic,
 )
-PROMOTION_MARKERS = (
-    "daily deal",
-    "deal ends",
-    "angebot endet",
-    "begrenztes angebot",
-    "promotion ends",
-)
-PRICE_TOKEN_RE = re.compile(
-    r"(?:(?P<prefix>[£$€])\s*(?P<prefix_amount>\d[\d.,]*))|(?:(?P<suffix_amount>\d[\d.,]*)\s*(?P<suffix>[£$€]))"
-)
-CSV_ROLE_DEFAULTS: dict[str, tuple[str, ...]] = {
-    "title": ("Title",),
-    "author": ("Author",),
-    "shelf": ("Exclusive Shelf",),
-    "bookshelves": ("Bookshelves",),
-    "rating": ("My Rating",),
-    "review": ("My Review",),
-    "average_rating": ("Average Rating",),
-    "date_read": ("Date Read",),
-    "date_added": ("Date Added",),
-    "isbn": ("ISBN",),
-    "isbn13": ("ISBN13",),
-    "book_id": ("Book Id",),
-}
-
-UNICODE_BOLD_TRANSLATION = str.maketrans(
-    {
-        **{chr(ord("A") + index): chr(0x1D5D4 + index) for index in range(26)},
-        **{chr(ord("a") + index): chr(0x1D5EE + index) for index in range(26)},
-        **{chr(ord("0") + index): chr(0x1D7EC + index) for index in range(10)},
-    }
-)
-
-
-def _marketplace_specs() -> dict[str, dict[str, str]]:
-    return {
-        "us": {
-            "label": "Audible US",
-            "dealUrl": "https://www.audible.com/dailydeal",
-            "timezone": "America/Los_Angeles",
-            "currency": "USD",
-            "currencySymbol": "$",
-            "defaultCron": "15 1 * * *",
-        },
-        "uk": {
-            "label": "Audible UK",
-            "dealUrl": "https://www.audible.co.uk/dailydeal",
-            "timezone": "Europe/London",
-            "currency": "GBP",
-            "currencySymbol": "£",
-            "defaultCron": "15 1 * * *",
-        },
-        "de": {
-            "label": "Audible DE",
-            "dealUrl": "https://www.audible.de/dailydeal",
-            "timezone": "Europe/Berlin",
-            "currency": "EUR",
-            "currencySymbol": "€",
-            "defaultCron": "15 1 * * *",
-        },
-        "ca": {
-            "label": "Audible CA",
-            "dealUrl": "https://www.audible.ca/dailydeal",
-            "timezone": "America/Toronto",
-            "currency": "CAD",
-            "currencySymbol": "$",
-            "defaultCron": "15 1 * * *",
-        },
-        "au": {
-            "label": "Audible AU",
-            "dealUrl": "https://www.audible.com.au/dailydeal",
-            "timezone": "Australia/Sydney",
-            "currency": "AUD",
-            "currencySymbol": "$",
-            "defaultCron": "15 1 * * *",
-        },
-    }
-
-
-SUPPORTED_MARKETPLACES = _marketplace_specs()
 
 
 class AudibleBlockedError(RuntimeError):
@@ -156,268 +99,6 @@ class AudibleParseError(RuntimeError):
 
 class NoActivePromotionError(RuntimeError):
     pass
-
-
-def ensure_python_version() -> None:
-    if sys.version_info < MIN_PYTHON:
-        required = ".".join(str(part) for part in MIN_PYTHON)
-        raise RuntimeError(f"Python {required}+ is required for this skill.")
-
-
-def normalize_space(value: str) -> str:
-    return re.sub(r"\s+", " ", value or "").strip()
-
-
-def strip_html(value: str) -> str:
-    text = html.unescape(value or "")
-    text = re.sub(r"<br\s*/?>", ". ", text, flags=re.I)
-    text = re.sub(r"</p>", " ", text, flags=re.I)
-    text = re.sub(r"<[^>]+>", " ", text)
-    text = re.sub(r"\s+", " ", text)
-    return text.strip()
-
-
-def strip_parentheticals(value: str) -> str:
-    return re.sub(r"\((?:[^)]*)\)", " ", value or "")
-
-
-def strip_combining_marks(value: str) -> str:
-    return "".join(ch for ch in unicodedata.normalize("NFKD", value) if not unicodedata.combining(ch))
-
-
-def normalized_key(value: str, *, ascii_only: bool = False) -> str:
-    text = html.unescape(value or "").replace("&", " and ").replace("’", "'")
-    text = strip_parentheticals(text)
-    text = unicodedata.normalize("NFKC", text).casefold()
-    if ascii_only:
-        text = strip_combining_marks(text).encode("ascii", "ignore").decode("ascii")
-    normalized = "".join(ch if ch.isalnum() else " " for ch in text)
-    return normalize_space(normalized)
-
-
-def split_author_roles(value: str) -> str:
-    cleaned = normalize_space(strip_html(value))
-    lowered = cleaned.casefold()
-    for pattern in AUTHOR_ROLE_PATTERNS:
-        match = re.search(pattern, lowered)
-        if match:
-            cleaned = cleaned[: match.start()].strip(" ,;-")
-            lowered = cleaned.casefold()
-    return normalize_space(cleaned)
-
-
-def normalize_author_key(value: str, *, ascii_only: bool = False) -> str:
-    cleaned = split_author_roles(value)
-    normalized = normalized_key(cleaned, ascii_only=ascii_only)
-    tokens = [token for token in normalized.split() if token and token not in AUTHOR_SUFFIXES]
-    filtered: list[str] = []
-    for index, token in enumerate(tokens):
-        if len(token) == 1 and 0 < index < len(tokens) - 1:
-            continue
-        filtered.append(token)
-    return " ".join(filtered).strip()
-
-
-def parse_float(value: Any) -> float | None:
-    if value in (None, ""):
-        return None
-    try:
-        return float(str(value).strip())
-    except Exception:
-        return None
-
-
-def parse_rating(value: Any) -> int:
-    try:
-        return int(str(value or "").strip() or 0)
-    except Exception:
-        return 0
-
-
-def parse_int_value(value: Any) -> int | None:
-    text = normalize_space(str(value or "")).replace(",", "")
-    if not text:
-        return None
-    try:
-        return int(text)
-    except Exception:
-        return None
-
-
-def parse_localized_price(raw: str | None) -> float | None:
-    if raw in (None, ""):
-        return None
-    text = normalize_space(str(raw)).replace("\xa0", "")
-    match = PRICE_TOKEN_RE.search(text)
-    if not match:
-        plain = re.search(r"(\d[\d.,]*)", text)
-        if not plain:
-            return None
-        number = plain.group(1)
-    else:
-        number = match.group("prefix_amount") or match.group("suffix_amount") or ""
-    number = number.replace(" ", "")
-    if "," in number and "." in number:
-        if number.rfind(",") > number.rfind("."):
-            number = number.replace(".", "").replace(",", ".")
-        else:
-            number = number.replace(",", "")
-    elif "," in number:
-        number = number.replace(".", "").replace(",", ".")
-    else:
-        number = number.replace(",", "")
-    try:
-        return float(number)
-    except Exception:
-        return None
-
-
-def now_iso() -> str:
-    return datetime.now(UTC).isoformat()
-
-
-def read_json(path: Path, default: Any) -> Any:
-    if not path.exists():
-        return default
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
-        return default
-
-
-def ensure_parent(path: Path) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-
-
-def atomic_write_text(path: Path, content: str) -> None:
-    ensure_parent(path)
-    fd, tmp_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=str(path.parent))
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            handle.write(content)
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.replace(tmp_name, path)
-    finally:
-        if os.path.exists(tmp_name):
-            os.unlink(tmp_name)
-
-
-def write_json_atomic(path: Path, payload: Any) -> None:
-    atomic_write_text(path, json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=False) + "\n")
-
-
-def skill_root() -> Path:
-    return Path(__file__).resolve().parents[1]
-
-
-def workspace_root() -> Path:
-    root = skill_root().resolve()
-    for parent in [root, *root.parents]:
-        if parent.name == "skills":
-            return parent.parent
-    return root
-
-
-def default_storage_dir() -> Path:
-    return workspace_root() / ".audible-goodreads-deal-scout"
-
-
-def default_config_path() -> Path:
-    return default_storage_dir() / "config.json"
-
-
-def default_state_path() -> Path:
-    return default_storage_dir() / "state.json"
-
-
-def default_preferences_path() -> Path:
-    return default_storage_dir() / "preferences.md"
-
-
-def default_artifact_dir() -> Path:
-    return default_storage_dir() / "artifacts" / "current"
-
-
-def validate_marketplace(marketplace: str) -> dict[str, str]:
-    key = normalize_space(marketplace).lower()
-    if key not in SUPPORTED_MARKETPLACES:
-        supported = ", ".join(sorted(SUPPORTED_MARKETPLACES))
-        raise ValueError(f"Unsupported marketplace '{marketplace}'. Public v1 supports: {supported}.")
-    return {"key": key, **SUPPORTED_MARKETPLACES[key]}
-
-
-def validate_timezone(spec: dict[str, str]) -> str:
-    timezone_name = spec["timezone"]
-    try:
-        ZoneInfo(timezone_name)
-    except ZoneInfoNotFoundError as exc:
-        raise RuntimeError(
-            f"Timezone data for {timezone_name} is unavailable on this host. Fix timezone data before enabling scheduling."
-        ) from exc
-    return timezone_name
-
-
-def config_template(**overrides: Any) -> dict[str, Any]:
-    payload = {
-        "audibleMarketplace": "us",
-        "threshold": DEFAULT_THRESHOLD,
-        "goodreadsCsvPath": None,
-        "preferencesPath": None,
-        "privacyMode": "normal",
-        "stateFile": None,
-        "artifactDir": None,
-        "freshnessDays": DEFAULT_FRESHNESS_DAYS,
-        "csvColumns": {},
-        "audibleDealUrl": None,
-        "dailyCron": None,
-        "deliveryChannel": None,
-        "deliveryTarget": None,
-        "deliveryPolicy": DEFAULT_DELIVERY_POLICY,
-    }
-    payload.update({key: value for key, value in overrides.items() if value is not None})
-    return payload
-
-
-def load_config(config_path: Path | None) -> tuple[Path, dict[str, Any]]:
-    path = (config_path or default_config_path()).resolve()
-    payload = read_json(path, config_template())
-    if not isinstance(payload, dict):
-        payload = config_template()
-    return path, {**config_template(), **payload}
-
-
-def prompt(text: str, default: str | None = None) -> str:
-    suffix = f" [{default}]" if default not in (None, "") else ""
-    raw = input(f"{text}{suffix}: ").strip()
-    if raw:
-        return raw
-    return default or ""
-
-
-def resolve_notes_text(notes_file: str | None, inline_notes: str | None) -> str:
-    if inline_notes:
-        return str(inline_notes)
-    normalized_path = normalize_space(str(notes_file or ""))
-    if normalized_path:
-        notes_path = Path(normalized_path).expanduser()
-        if notes_path.exists():
-            return notes_path.read_text(encoding="utf-8")
-    return ""
-
-
-def parse_csv_column_overrides(items: list[str] | None) -> dict[str, str]:
-    result: dict[str, str] = {}
-    for item in items or []:
-        if "=" not in item:
-            raise ValueError(f"Invalid --csv-column value '{item}'. Use role=Header.")
-        role, header = item.split("=", 1)
-        role = normalize_space(role).replace("-", "_").lower()
-        header = header.strip()
-        if not role or not header:
-            raise ValueError(f"Invalid --csv-column value '{item}'. Use role=Header.")
-        result[role] = header
-    return result
 
 
 def resolve_csv_headers(headers: list[str], overrides: dict[str, str] | None = None) -> dict[str, str]:
