@@ -15,6 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from audible_goodreads_deal_scout import core, public_cli  # noqa: E402
 from audible_goodreads_deal_scout import delivery as delivery_mod  # noqa: E402
 from audible_goodreads_deal_scout import repo_audit  # noqa: E402
+from audible_goodreads_deal_scout import rendering  # noqa: E402
 
 
 GOODREADS_HEADERS = [
@@ -121,6 +122,10 @@ def row(
         "Read Count": "1",
         "Owned Copies": "0",
     }
+
+
+def read_message_fixture(name: str) -> str:
+    return (Path(__file__).resolve().parent / "fixtures" / "messages" / name).read_text(encoding="utf-8").rstrip("\n")
 
 
 class AudibleGoodreadsDealScoutTests(unittest.TestCase):
@@ -693,6 +698,87 @@ class AudibleGoodreadsDealScoutTests(unittest.TestCase):
         self.assertEqual(final["reasonCode"], "recommend_public_threshold")
         self.assertIn("Goodreads rating: 4.15 (9,501 ratings)", final["message"])
         self.assertIn("𝗦𝗶𝗴𝗻𝗮𝗹 𝗙𝗶𝗿𝗲 — Jane Story (2022)", final["message"])
+
+    def test_message_snapshots_match_expected_layout(self) -> None:
+        prep = core.prepare_run({"audibleMarketplace": "us"}, fetcher=fake_fetcher)
+        public_final = core.finalize_skill_result(
+            prep,
+            {
+                "schemaVersion": 1,
+                "goodreads": {
+                    "status": "resolved",
+                    "url": "https://www.goodreads.com/book/show/1",
+                    "title": "Signal Fire",
+                    "author": "Jane Story",
+                    "averageRating": 4.15,
+                    "ratingsCount": "9,501",
+                },
+                "fit": {"status": "not_applicable"},
+            },
+        )
+        self.assertEqual(public_final["message"], read_message_fixture("recommend_public_threshold.txt"))
+
+        summary_suppress = rendering.build_delivery_plan(
+            {
+                "status": "suppress",
+                "reasonCode": "suppress_already_read",
+                "reasonText": "Already marked as read.",
+                "message": "full message",
+                "audible": {"title": "Signal Fire", "author": "Jane Story", "year": 2022, "audibleUrl": "https://audible"},
+                "goodreads": {"status": "resolved", "url": "https://goodreads", "averageRating": 4.2, "ratingsCount": 1000},
+                "metadata": {"marketplace": "us", "marketplaceLabel": "Audible US", "storeLocalDate": "2026-04-20"},
+                "warnings": [],
+            },
+            "summary_on_non_match",
+        )
+        self.assertEqual(summary_suppress["message"], read_message_fixture("summary_suppress_already_read.txt"))
+
+        summary_error = rendering.build_delivery_plan(
+            {
+                "status": "error",
+                "reasonCode": "error_goodreads_lookup_failed",
+                "reasonText": "Goodreads public lookup failed.",
+                "message": "full error",
+                "audible": {"title": "Signal Fire", "author": "Jane Story", "year": 2022},
+                "goodreads": {"status": "lookup_failed"},
+                "metadata": {"marketplace": "us", "marketplaceLabel": "Audible US", "storeLocalDate": "2026-04-20"},
+                "warnings": [],
+            },
+            "summary_on_non_match",
+        )
+        self.assertEqual(summary_error["message"], read_message_fixture("summary_error_goodreads_lookup_failed.txt"))
+
+    def test_to_read_message_snapshot_matches_expected_layout(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            export_path = tmp / "goodreads.csv"
+            write_rows(export_path, [row(title="Signal Fire", author="Jane Story", shelf="to-read", rating="5")])
+            prep = core.prepare_run(
+                {
+                    "audibleMarketplace": "us",
+                    "goodreadsCsvPath": str(export_path),
+                },
+                fetcher=fake_fetcher,
+            )
+            final = core.finalize_skill_result(
+                prep,
+                {
+                    "schemaVersion": 1,
+                    "goodreads": {
+                        "status": "resolved",
+                        "url": "https://www.goodreads.com/book/show/1",
+                        "title": "Signal Fire",
+                        "author": "Jane Story",
+                        "averageRating": 4.25,
+                        "ratingsCount": 19806,
+                    },
+                    "fit": {
+                        "status": "written",
+                        "sentence": "Fit: Strong match, on your to-read shelf. The book lines up with the kinds of sharp, idea-driven fiction you keep around. The main risk is that its style may be more cerebral than emotionally warm.",
+                    },
+                },
+            )
+        self.assertEqual(final["message"], read_message_fixture("recommend_to_read_override.txt"))
 
     def test_run_and_deliver_command_finalizes_then_sends(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
