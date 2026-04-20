@@ -1,12 +1,50 @@
 # Audible Goodreads Deal Scout
 
-`audible-goodreads-deal-scout` helps you decide whether an Audible daily promotion is actually worth your attention.
+`audible-goodreads-deal-scout` is a **ClawHub / OpenClaw skill** for evaluating Audible daily deals.
 
-It is built for people who do **not** want raw deal spam. Instead of only showing the discounted book, it combines:
+If you are looking at this repository on GitHub, you are looking at the **source for a publishable ClawHub skill**, not a generic Python app or a standalone website.
+
+Its job is simple: help you decide whether an Audible daily promotion is actually worth your attention.
+
+It is built for people who do **not** want raw deal spam. Instead of only showing the discounted book, the skill combines:
 - the public Goodreads rating
 - your Goodreads shelves, if you provide a CSV
 - your own reading preferences, if you provide notes
 - a delivery policy that decides what should be sent and what should be skipped quietly
+
+## What this skill is for
+
+Use this skill if you want OpenClaw to:
+- check the current Audible daily promotion
+- decide whether the book clears a quality bar
+- notice if you already read it or already saved it
+- write a short fit paragraph about why it may work for you
+- optionally send the result to a configured channel such as Telegram
+
+This repo is intended to be:
+- developed on GitHub
+- published on ClawHub
+- installed into OpenClaw as a reusable skill
+
+## Install or publish
+
+If you just want to use it in OpenClaw once it is published:
+
+```bash
+openclaw skills install audible-goodreads-deal-scout
+```
+
+If you want to publish your own version from this repo:
+
+```bash
+clawhub login
+clawhub skill publish . \
+  --slug audible-goodreads-deal-scout \
+  --name "Audible Goodreads Deal Scout" \
+  --version 0.1.0 \
+  --changelog "Initial public release" \
+  --tags latest
+```
 
 ## Start here
 
@@ -342,18 +380,6 @@ Before publishing, run:
 
 ```bash
 python3 -m audible_goodreads_deal_scout.public_cli publish-audit --version 0.1.0 --tags latest
-```
-
-Then publish:
-
-```bash
-clawhub login
-clawhub skill publish . \
-  --slug audible-goodreads-deal-scout \
-  --name "Audible Goodreads Deal Scout" \
-  --version 0.1.0 \
-  --changelog "Initial public release" \
-  --tags latest
 ```
 
 ## Why this is worth publishing
