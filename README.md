@@ -26,6 +26,8 @@ This repo is intended to be:
 - published on ClawHub
 - installed into OpenClaw as a reusable skill
 
+If you want to re-implement the workflow without using the shipped skill directly, see [PROMPT_REQUEST.md](PROMPT_REQUEST.md). It captures the intention, scope, design guardrails, edge cases, and example prompt in one place.
+
 ## Install or publish
 
 If you just want to use it in OpenClaw once it is published:
