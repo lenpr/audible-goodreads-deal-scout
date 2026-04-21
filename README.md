@@ -77,13 +77,13 @@ If you want one straightforward setup path, use this:
 4. Run:
 
 ```bash
-python3 -m audible_goodreads_deal_scout.public_cli setup
+./bin/audible-goodreads-deal-scout setup
 ```
 
 5. Then evaluate the current deal:
 
 ```bash
-python3 -m audible_goodreads_deal_scout.public_cli prepare \
+./bin/audible-goodreads-deal-scout prepare \
   --config-path .audible-goodreads-deal-scout/config.json
 ```
 
@@ -340,7 +340,7 @@ If you want to see the whole flow once from start to finish, this is the cleanes
 1. Write a config and optional notes/delivery settings:
 
 ```bash
-python3 -m audible_goodreads_deal_scout.public_cli setup \
+./bin/audible-goodreads-deal-scout setup \
   --non-interactive \
   --config-path .audible-goodreads-deal-scout/config.json \
   --audible-marketplace us \
@@ -355,7 +355,7 @@ python3 -m audible_goodreads_deal_scout.public_cli setup \
 2. Prepare today's deal:
 
 ```bash
-python3 -m audible_goodreads_deal_scout.public_cli prepare \
+./bin/audible-goodreads-deal-scout prepare \
   --config-path .audible-goodreads-deal-scout/config.json
 ```
 
@@ -388,7 +388,7 @@ That writes the working artifacts into `.audible-goodreads-deal-scout/artifacts/
 4. Finalize the public result contract:
 
 ```bash
-python3 -m audible_goodreads_deal_scout.public_cli finalize \
+./bin/audible-goodreads-deal-scout finalize \
   --prepare-json .audible-goodreads-deal-scout/artifacts/current/prepare-result.json \
   --runtime-output /tmp/runtime-output.json
 ```
@@ -396,7 +396,7 @@ python3 -m audible_goodreads_deal_scout.public_cli finalize \
 5. If you configured delivery, send the finished message:
 
 ```bash
-python3 -m audible_goodreads_deal_scout.public_cli run-and-deliver \
+./bin/audible-goodreads-deal-scout run-and-deliver \
   --config-path .audible-goodreads-deal-scout/config.json \
   --prepare-json .audible-goodreads-deal-scout/artifacts/current/prepare-result.json \
   --runtime-output /tmp/runtime-output.json
@@ -415,16 +415,18 @@ Three issues cause most confusing runs:
 Useful checks:
 
 ```bash
-python3 -m audible_goodreads_deal_scout.public_cli show-csv-headers "/absolute/path/to/goodreads_library_export.csv"
-python3 -m audible_goodreads_deal_scout.public_cli publish-audit --version 0.1.0 --tags latest
+./bin/audible-goodreads-deal-scout show-csv-headers "/absolute/path/to/goodreads_library_export.csv"
+./bin/audible-goodreads-deal-scout publish-audit --version 0.1.0 --tags latest
 ```
+
+If your OpenClaw host runs `exec` in `allowlist` mode, prefer this bundled wrapper instead of `python3 -m ...`. It gives the skill one narrow executable path that can be allowlisted cleanly for scheduled runs.
 
 ## Advanced CLI usage
 
 If you prefer scripted setup instead of interactive setup:
 
 ```bash
-python3 -m audible_goodreads_deal_scout.public_cli setup \
+./bin/audible-goodreads-deal-scout setup \
   --non-interactive \
   --config-path .audible-goodreads-deal-scout/config.json \
   --audible-marketplace us \
@@ -439,15 +441,15 @@ python3 -m audible_goodreads_deal_scout.public_cli setup \
 Useful helper commands:
 
 ```bash
-python3 -m audible_goodreads_deal_scout.public_cli show-csv-headers "/absolute/path/to/goodreads_library_export.csv"
-python3 -m audible_goodreads_deal_scout.public_cli measure-context --goodreads-csv "/absolute/path/to/goodreads_library_export.csv" --output /tmp/fit-context.json
-python3 -m audible_goodreads_deal_scout.public_cli publish-audit --version 0.1.0
+./bin/audible-goodreads-deal-scout show-csv-headers "/absolute/path/to/goodreads_library_export.csv"
+./bin/audible-goodreads-deal-scout measure-context --goodreads-csv "/absolute/path/to/goodreads_library_export.csv" --output /tmp/fit-context.json
+./bin/audible-goodreads-deal-scout publish-audit --version 0.1.0
 ```
 
 Finalize and deliver in one step:
 
 ```bash
-python3 -m audible_goodreads_deal_scout.public_cli run-and-deliver \
+./bin/audible-goodreads-deal-scout run-and-deliver \
   --config-path .audible-goodreads-deal-scout/config.json \
   --prepare-json .audible-goodreads-deal-scout/artifacts/current/prepare-result.json \
   --runtime-output /tmp/runtime-output.json
@@ -457,6 +459,7 @@ python3 -m audible_goodreads_deal_scout.public_cli run-and-deliver \
 
 - `SKILL.md`: agent-facing runtime instructions
 - `agents/openai.yaml`: interface metadata and default prompt for OpenClaw agent surfaces
+- `bin/audible-goodreads-deal-scout`: bundled wrapper entrypoint for local CLI and OpenClaw exec-friendly invocation
 - `audible_goodreads_deal_scout/core.py`: prep/orchestration logic
 - `audible_goodreads_deal_scout/rendering.py`: card rendering and delivery planning
 - `audible_goodreads_deal_scout/delivery.py`: config, cron, and delivery helpers
@@ -470,7 +473,7 @@ python3 -m audible_goodreads_deal_scout.public_cli run-and-deliver \
 Before publishing, run:
 
 ```bash
-python3 -m audible_goodreads_deal_scout.public_cli publish-audit --version 0.1.0 --tags latest
+./bin/audible-goodreads-deal-scout publish-audit --version 0.1.0 --tags latest
 ```
 
 ## Why this is worth publishing

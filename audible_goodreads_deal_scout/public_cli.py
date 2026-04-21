@@ -286,6 +286,7 @@ def command_publish_audit(args: argparse.Namespace) -> int:
         "SKILL.md": skill_dir / "SKILL.md",
         "README.md": skill_dir / "README.md",
         "config.example.json": skill_dir / "config.example.json",
+        "bin/audible-goodreads-deal-scout": skill_dir / "bin" / "audible-goodreads-deal-scout",
         "agents/openai.yaml": skill_dir / "agents" / "openai.yaml",
         "audible_goodreads_deal_scout/public_cli.py": skill_dir / "audible_goodreads_deal_scout" / "public_cli.py",
         "audible_goodreads_deal_scout/core.py": skill_dir / "audible_goodreads_deal_scout" / "core.py",

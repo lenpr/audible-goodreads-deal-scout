@@ -262,6 +262,7 @@ class AudibleGoodreadsDealScoutTests(unittest.TestCase):
             output_text = "".join(call.args[0] for call in fake_stdout.write.call_args_list)
         self.assertEqual(rc, 0)
         payload = json.loads(output_text)
+        self.assertTrue(payload["files"]["bin/audible-goodreads-deal-scout"])
         self.assertTrue(payload["frontmatter"]["hasLicense"])
         self.assertTrue(payload["frontmatter"]["hasSkillKey"])
         self.assertTrue(payload["frontmatter"]["hasCategory"])
@@ -754,7 +755,7 @@ class AudibleGoodreadsDealScoutTests(unittest.TestCase):
         self.assertIn("𝗦𝗶𝗴𝗻𝗮𝗹 𝗙𝗶𝗿𝗲 — Jane Story (2022)", final["message"])
 
     def test_message_snapshots_match_expected_layout(self) -> None:
-        prep = core.prepare_run({"audibleMarketplace": "us"}, fetcher=fake_fetcher)
+        prep = core.prepare_run({"audibleMarketplace": "us", "today": "2026-04-20"}, fetcher=fake_fetcher)
         public_final = core.finalize_skill_result(
             prep,
             {
@@ -811,6 +812,7 @@ class AudibleGoodreadsDealScoutTests(unittest.TestCase):
                 {
                     "audibleMarketplace": "us",
                     "goodreadsCsvPath": str(export_path),
+                    "today": "2026-04-20",
                 },
                 fetcher=fake_fetcher,
             )
