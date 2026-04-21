@@ -142,8 +142,9 @@ def resolve_notes_text(notes_file: str | None, inline_notes: str | None) -> str:
     normalized_path = normalize_space(str(notes_file or ""))
     if normalized_path:
         notes_path = Path(normalized_path).expanduser()
-        if notes_path.exists():
-            return notes_path.read_text(encoding="utf-8")
+        if not notes_path.exists():
+            raise FileNotFoundError(f"Preference notes file not found at {notes_path}.")
+        return notes_path.read_text(encoding="utf-8")
     return ""
 
 

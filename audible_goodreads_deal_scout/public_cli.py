@@ -8,11 +8,31 @@ from pathlib import Path
 from . import core
 from .repo_audit import scan_repo_for_leaks
 
+REQUIRED_PUBLISH_IGNORE_PATTERNS = (
+    ".audible-goodreads-deal-scout/",
+    "__pycache__/",
+    ".pytest_cache/",
+    "tests/",
+    "docs/",
+)
+
 
 def load_json_input(path_or_dash: str | None) -> dict:
     if not path_or_dash or path_or_dash == "-":
         return json.loads(sys.stdin.read())
     return json.loads(Path(path_or_dash).expanduser().read_text(encoding="utf-8"))
+
+
+def load_ignore_entries(path: Path) -> set[str]:
+    if not path.exists():
+        return set()
+    entries: set[str] = set()
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        stripped = raw_line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        entries.add(stripped)
+    return entries
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -261,6 +281,7 @@ def command_mark_emitted(args: argparse.Namespace) -> int:
 
 def command_publish_audit(args: argparse.Namespace) -> int:
     skill_dir = Path(__file__).resolve().parents[1]
+    publish_ignore_path = skill_dir / ".clawhubignore"
     required_files = {
         "SKILL.md": skill_dir / "SKILL.md",
         "README.md": skill_dir / "README.md",
@@ -270,14 +291,29 @@ def command_publish_audit(args: argparse.Namespace) -> int:
         "audible_goodreads_deal_scout/core.py": skill_dir / "audible_goodreads_deal_scout" / "core.py",
     }
     skill_text = required_files["SKILL.md"].read_text(encoding="utf-8") if required_files["SKILL.md"].exists() else ""
+    publish_ignore_entries = load_ignore_entries(publish_ignore_path)
+    missing_publish_ignore_patterns = [
+        pattern for pattern in REQUIRED_PUBLISH_IGNORE_PATTERNS if pattern not in publish_ignore_entries
+    ]
     warnings: list[str] = []
     if "skillKey" not in skill_text:
         warnings.append("SKILL.md metadata should declare metadata.openclaw.skillKey for stable settings lookup.")
     if "requires" not in skill_text:
         warnings.append("SKILL.md metadata should declare install/runtime requirements.")
+    if "license:" not in skill_text:
+        warnings.append("SKILL.md frontmatter should declare a license.")
+    if '"category"' not in skill_text and "category:" not in skill_text:
+        warnings.append("SKILL.md metadata should declare a category for marketplace discoverability.")
     for label, path in required_files.items():
         if not path.exists():
             warnings.append(f"Missing required publish file: {label}")
+    if not publish_ignore_path.exists():
+        warnings.append("Missing .clawhubignore; publish bundles should exclude tests, docs, and generated local state.")
+    elif missing_publish_ignore_patterns:
+        warnings.append(
+            ".clawhubignore should exclude publish-time artifacts: "
+            + ", ".join(missing_publish_ignore_patterns)
+        )
     leak_audit = scan_repo_for_leaks(skill_dir)
     if not leak_audit["ok"]:
         warnings.extend(
@@ -286,18 +322,24 @@ def command_publish_audit(args: argparse.Namespace) -> int:
         )
     result = {
         "ok": not warnings,
-        "skillDir": str(skill_dir),
         "files": {label: path.exists() for label, path in required_files.items()},
         "frontmatter": {
             "hasName": "name:" in skill_text,
             "hasDescription": "description:" in skill_text,
+            "hasLicense": "license:" in skill_text,
             "hasSkillKey": "skillKey" in skill_text,
+            "hasCategory": '"category"' in skill_text or "category:" in skill_text,
             "hasRequirements": "requires" in skill_text,
+        },
+        "publishIgnore": {
+            "exists": publish_ignore_path.exists(),
+            "requiredExclusionsPresent": publish_ignore_path.exists() and not missing_publish_ignore_patterns,
+            "missingExclusions": missing_publish_ignore_patterns,
         },
         "privacyAudit": leak_audit,
         "supportedMarketplaces": sorted(core.SUPPORTED_MARKETPLACES),
         "recommendedPublishCommand": (
-            f'clawhub skill publish "{skill_dir}" --slug audible-goodreads-deal-scout '
+            'clawhub skill publish . --slug audible-goodreads-deal-scout '
             f'--name "Audible Goodreads Deal Scout" --version {args.version} --tags {args.tags}'
         ),
         "warnings": warnings,

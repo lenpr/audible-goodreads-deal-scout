@@ -34,6 +34,8 @@ If you just want to use it in OpenClaw once it is published:
 openclaw skills install audible-goodreads-deal-scout
 ```
 
+Start a new OpenClaw session after install or after changing skill config so the fresh skill snapshot is picked up cleanly.
+
 If you want to publish your own version from this repo:
 
 ```bash
@@ -329,6 +331,92 @@ Fit: You marked it as read on Goodreads.
 Audible: https://www.audible.com/pd/...
 ```
 
+## One complete walkthrough
+
+If you want to see the whole flow once from start to finish, this is the cleanest path.
+
+1. Write a config and optional notes/delivery settings:
+
+```bash
+python3 -m audible_goodreads_deal_scout.public_cli setup \
+  --non-interactive \
+  --config-path .audible-goodreads-deal-scout/config.json \
+  --audible-marketplace us \
+  --threshold 3.8 \
+  --goodreads-csv "/absolute/path/to/goodreads_library_export.csv" \
+  --notes-file "/absolute/path/to/preferences.md" \
+  --delivery-channel telegram \
+  --delivery-target "-1000000000000" \
+  --delivery-policy positive_only
+```
+
+2. Prepare today's deal:
+
+```bash
+python3 -m audible_goodreads_deal_scout.public_cli prepare \
+  --config-path .audible-goodreads-deal-scout/config.json
+```
+
+That writes the working artifacts into `.audible-goodreads-deal-scout/artifacts/current/`, including:
+- `prepare-result.json`
+- `runtime-input.json`
+- `runtime-prompt.md`
+- `runtime-output-schema.json`
+
+3. Let the OpenClaw runtime produce a `runtime-output.json` file that matches the schema from step 2. A typical successful output looks like:
+
+```json
+{
+  "schemaVersion": 1,
+  "goodreads": {
+    "status": "resolved",
+    "url": "https://www.goodreads.com/book/show/1",
+    "title": "Signal Fire",
+    "author": "Jane Story",
+    "averageRating": 4.15,
+    "ratingsCount": 9501
+  },
+  "fit": {
+    "status": "written",
+    "sentence": "Fit: Likely to work if you want sharp, idea-driven speculative fiction. The main risk is that it may feel more cerebral than emotionally warm."
+  }
+}
+```
+
+4. Finalize the public result contract:
+
+```bash
+python3 -m audible_goodreads_deal_scout.public_cli finalize \
+  --prepare-json .audible-goodreads-deal-scout/artifacts/current/prepare-result.json \
+  --runtime-output /tmp/runtime-output.json
+```
+
+5. If you configured delivery, send the finished message:
+
+```bash
+python3 -m audible_goodreads_deal_scout.public_cli run-and-deliver \
+  --config-path .audible-goodreads-deal-scout/config.json \
+  --prepare-json .audible-goodreads-deal-scout/artifacts/current/prepare-result.json \
+  --runtime-output /tmp/runtime-output.json
+```
+
+If you just want to inspect the decision locally, stop after `finalize`.
+
+## Troubleshooting
+
+Three issues cause most confusing runs:
+
+- Wrong notes path: if `notesFile` or `preferencesPath` points at a missing file, the prep step now returns `error_missing_notes_file` instead of silently continuing.
+- Wrong CSV header override: `--csv-column role=Header` must match the Goodreads export header exactly. If you are unsure, run `show-csv-headers` first.
+- Stale Goodreads export: if the CSV is old, the skill can still run, but read status, shelf state, and fit evidence may lag behind your actual library.
+
+Useful checks:
+
+```bash
+python3 -m audible_goodreads_deal_scout.public_cli show-csv-headers "/absolute/path/to/goodreads_library_export.csv"
+python3 -m audible_goodreads_deal_scout.public_cli publish-audit --version 0.1.0 --tags latest
+```
+
 ## Advanced CLI usage
 
 If you prefer scripted setup instead of interactive setup:
@@ -366,6 +454,7 @@ python3 -m audible_goodreads_deal_scout.public_cli run-and-deliver \
 ## Repository structure
 
 - `SKILL.md`: agent-facing runtime instructions
+- `agents/openai.yaml`: interface metadata and default prompt for OpenClaw agent surfaces
 - `audible_goodreads_deal_scout/core.py`: prep/orchestration logic
 - `audible_goodreads_deal_scout/rendering.py`: card rendering and delivery planning
 - `audible_goodreads_deal_scout/delivery.py`: config, cron, and delivery helpers

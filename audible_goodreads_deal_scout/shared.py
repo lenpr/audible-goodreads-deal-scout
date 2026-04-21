@@ -182,8 +182,9 @@ def truncate_text(text: str, limit: int) -> str:
 
 
 def approx_token_count(text: str) -> int:
-    return max(1, round(len(text) / 4))
+    return max(0, round(len(text) / 4))
 
 
 def normalize_review_text(text: str) -> str:
-    return normalize_space(strip_html(text))
+    cleaned = normalize_space(strip_html(text))
+    return re.sub(r"([.!?])(?:\s*[.!?]){1,}", r"\1", cleaned)

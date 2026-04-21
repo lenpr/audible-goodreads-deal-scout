@@ -1,7 +1,8 @@
 ---
 name: audible-goodreads-deal-scout
 description: Evaluate an Audible daily promotion against Goodreads public score, optional Goodreads CSV shelves, optional freeform reading notes, and optional delivery rules. Use for first-run setup, deal checks, and scheduled sends.
-metadata: {"openclaw":{"emoji":"🎧","skillKey":"audible-goodreads-deal-scout","requires":{"anyBins":["python3","python"]}}}
+license: MIT
+metadata: {"openclaw":{"emoji":"🎧","skillKey":"audible-goodreads-deal-scout","homepage":"https://github.com/lenpr/audible-goodreads-deal-scout","category":"media","requires":{"anyBins":["python3","python"]}}}
 ---
 
 # Audible Goodreads Deal Scout

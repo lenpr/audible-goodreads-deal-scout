@@ -14,7 +14,15 @@ def resolve_csv_headers(headers: list[str], overrides: dict[str, str] | None = N
     header_lookup = {header.casefold(): header for header in headers}
     for role, names in CSV_ROLE_DEFAULTS.items():
         if role in overrides:
-            mapping[role] = overrides[role]
+            override_header = str(overrides[role]).strip()
+            existing = header_lookup.get(override_header.casefold())
+            if not existing:
+                detected = ", ".join(headers)
+                raise ValueError(
+                    f"CSV override for {role} references missing header '{override_header}'. "
+                    f"Detected headers: {detected}."
+                )
+            mapping[role] = existing
             continue
         for candidate in names:
             existing = header_lookup.get(candidate.casefold())

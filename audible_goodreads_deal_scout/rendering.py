@@ -84,6 +84,7 @@ def summary_fit_text(final_result: dict[str, Any]) -> str:
         "error_audible_blocked": "Fit: Audible could not be verified right now.",
         "error_ambiguous_personal_match": "Fit: Goodreads has conflicting shelf information for this title.",
         "error_csv_unreadable": "Fit: Goodreads data could not be read right now.",
+        "error_missing_notes_file": "Fit: Preference notes could not be read right now.",
         "error_missing_csv": "Fit: Goodreads data is not available right now.",
     }
     return mapping.get(reason_code, "Fit: This deal could not be verified right now.")

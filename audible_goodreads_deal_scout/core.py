@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import csv
 import json
-import re
 import sys
 import urllib.parse
 from datetime import UTC, date, datetime
@@ -20,8 +19,6 @@ from .constants import (
     FIT_NO_PERSONAL_DATA,
     FIT_REVIEW_SUMMARY_LIMIT,
     SUPPORTED_PRIVACY_MODES,
-    SUPPORTED_DELIVERY_POLICIES,
-    UNICODE_BOLD_TRANSLATION,
 )
 from .audible_source import (
     AudibleBlockedError,
@@ -39,6 +36,7 @@ from .delivery import (
     find_matching_cron_job,
     list_cron_jobs,
     register_cron_job,
+    normalize_delivery_policy,
     resolve_delivery_policy,
     resolve_delivery_settings,
     setup_configuration,
@@ -48,7 +46,21 @@ from .goodreads_csv import (
     effective_shelf,
     load_goodreads_csv,
 )
-from .rendering import build_delivery_plan, render_delivery_summary_message, render_final_message
+from .rendering import (
+    bold_visible_text,
+    build_delivery_plan,
+    format_runtime,
+    offer_description,
+    price_display,
+    render_delivery_summary_message,
+    render_final_message,
+)
+from .runtime_contract import (
+    build_runtime_input,
+    build_runtime_prompt,
+    runtime_output_schema,
+    write_runtime_contract_artifacts,
+)
 from .settings import (
     SUPPORTED_MARKETPLACES,
     config_template,
@@ -131,14 +143,58 @@ def save_state(path: Path, state: dict[str, Any]) -> None:
     write_json_atomic(path, payload)
 
 
-def approx_token_count(text: str) -> int:
-    return max(0, round(len(text) / 4))
+def make_prepare_result(
+    status: str,
+    reason_code: str,
+    message: str,
+    *,
+    warnings: list[str],
+    audible: dict[str, Any] | None = None,
+    personal_data: dict[str, Any] | None = None,
+    artifacts: dict[str, Any] | None = None,
+    metadata: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    return {
+        "schemaVersion": 1,
+        "status": status,
+        "reasonCode": reason_code,
+        "warnings": list(warnings),
+        "audible": audible or {},
+        "personalData": personal_data or {},
+        "artifacts": artifacts or {},
+        "metadata": metadata or {},
+        "message": message,
+    }
 
 
-def normalize_review_text(review: str) -> str:
-    cleaned = normalize_space(review)
-    cleaned = re.sub(r"([.!?])(?:\s*[.!?]){1,}", r"\1", cleaned)
-    return cleaned
+def make_audible_fetch_result(
+    *,
+    status: str,
+    reason_code: str,
+    message: str,
+    warnings: list[str],
+    spec: dict[str, str],
+    requested_url: str,
+    mode: str,
+    privacy_mode: str,
+    store_date: date,
+) -> dict[str, Any]:
+    return make_prepare_result(
+        status,
+        reason_code,
+        message,
+        warnings=warnings,
+        audible={"marketplace": spec["key"], "requestedUrl": requested_url},
+        personal_data={"mode": mode, "privacyMode": privacy_mode},
+        artifacts={},
+        metadata={
+            "marketplace": spec["key"],
+            "marketplaceLabel": spec["label"],
+            "storeLocalDate": store_date.isoformat(),
+            "timezone": spec["timezone"],
+            "shortCircuit": True,
+        },
+    )
 
 
 def build_fit_context_entries(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -274,130 +330,6 @@ def write_artifacts(
     return artifacts
 
 
-def runtime_output_schema() -> dict[str, Any]:
-    return {
-        "schemaVersion": 1,
-        "type": "object",
-        "required": ["schemaVersion", "goodreads", "fit"],
-        "properties": {
-            "schemaVersion": {"const": 1},
-            "goodreads": {
-                "type": "object",
-                "required": ["status"],
-                "properties": {
-                    "status": {
-                        "enum": ["resolved", "no_match", "lookup_failed"],
-                    },
-                    "url": {"type": ["string", "null"]},
-                    "title": {"type": ["string", "null"]},
-                    "author": {"type": ["string", "null"]},
-                    "averageRating": {"type": ["number", "null"]},
-                    "ratingsCount": {"type": ["integer", "null"]},
-                    "evidence": {"type": ["string", "null"]},
-                },
-            },
-            "fit": {
-                "type": "object",
-                "required": ["status"],
-                "properties": {
-                    "status": {
-                        "enum": ["written", "not_applicable", "unavailable"],
-                    },
-                    "sentence": {"type": ["string", "null"]},
-                },
-            },
-        },
-    }
-
-
-def build_runtime_input(prep_result: dict[str, Any]) -> dict[str, Any]:
-    metadata = dict(prep_result.get("metadata") or {})
-    personal_data = dict(prep_result.get("personalData") or {})
-    exact_shelf = normalize_space(str(personal_data.get("exactShelfMatch") or ""))
-    csv_data = dict(personal_data.get("csv") or {})
-    context_budget = dict(csv_data.get("contextBudget") or {})
-    return {
-        "schemaVersion": 1,
-        "decisionContract": {
-            "threshold": metadata.get("threshold", DEFAULT_THRESHOLD),
-            "exactShelfMatch": exact_shelf,
-            "toReadOverridesThreshold": True,
-            "readAndCurrentlyReadingSuppress": True,
-        },
-        "audible": prep_result.get("audible") or {},
-        "personalDataSummary": {
-            "mode": personal_data.get("mode"),
-            "privacyMode": personal_data.get("privacyMode"),
-            "allowModelPersonalization": personal_data.get("allowModelPersonalization"),
-            "exactShelfMatch": exact_shelf,
-            "matchedEntryCount": len(personal_data.get("matchedEntries") or []),
-            "csvRatedOrReviewedCount": int(csv_data.get("ratedOrReviewedCount") or 0),
-            "csvReviewedCount": int(csv_data.get("reviewedCount") or 0),
-            "fitContextApproxTokens": int(context_budget.get("estimatedFinalApproxTokens") or 0),
-            "notesPresent": bool(((personal_data.get("notes") or {}).get("present"))),
-        },
-        "artifactPaths": prep_result.get("artifacts") or {},
-        "warnings": list(prep_result.get("warnings") or []),
-        "requiredRuntimeOutputSchema": runtime_output_schema(),
-    }
-
-
-def build_runtime_prompt(runtime_input: dict[str, Any]) -> str:
-    threshold = runtime_input["decisionContract"]["threshold"]
-    exact_shelf = runtime_input["decisionContract"].get("exactShelfMatch") or ""
-    lines = [
-        "You are the skill runtime for audible-goodreads-deal-scout.",
-        "Read the runtime input JSON and return JSON only.",
-        "Do not invent fields outside the required runtime output schema.",
-        "Use OpenClaw web/search to locate the Goodreads public book page and score when needed.",
-        "Prefer Goodreads book pages over list, author, or discussion pages.",
-        "Verify the Goodreads title/author match against the Audible title and author before trusting the score.",
-        f"The public Goodreads threshold is {threshold:.1f}.",
-    ]
-    if exact_shelf == "to-read":
-        lines.append("This book is already on the user's Goodreads to-read shelf. Goodreads lookup is optional for decisioning; a fit sentence is still useful.")
-    else:
-        lines.append("If Goodreads cannot be confidently matched, return goodreads.status = \"no_match\" or \"lookup_failed\" instead of guessing.")
-    lines.extend(
-        [
-            "Fit generation rules:",
-            "- If privacyMode is minimal, do not use personal CSV or notes content.",
-            "- Use artifacts.fitContextPath as the primary CSV taste artifact. It keeps every rated/reviewed book and strips low-value metadata.",
-            "- If artifacts.reviewSourcePath exists, summarize each review-bearing entry to 500 characters or fewer before using it for fit reasoning. Do not mechanically truncate reviews.",
-            "- Use artifacts.personalDataPath for summary metadata and exact shelf state, not for full taste history.",
-            "- Write Fit as a compact paragraph, not a generic single sentence.",
-            "- Preferred shape: 2 or 3 short sentences, roughly 45-90 words total.",
-            "- Mention what is likely to appeal to the user and one concrete thing they may dislike or find limiting.",
-            "- Avoid low-entropy filler like 'your Goodreads history shows interest' unless followed by specific taste detail.",
-            "- If exactShelfMatch is to-read, mention that explicitly in the fit paragraph.",
-            "- If there is no meaningful personal data, set fit.status to \"not_applicable\".",
-            "- If the model cannot write a fit paragraph reliably, set fit.status to \"unavailable\".",
-            "",
-            "Required runtime output schema:",
-            json.dumps(runtime_output_schema(), indent=2, sort_keys=True, ensure_ascii=False),
-            "",
-            "Runtime input JSON:",
-            json.dumps(runtime_input, indent=2, sort_keys=True, ensure_ascii=False),
-        ]
-    )
-    return "\n".join(lines) + "\n"
-
-
-def write_runtime_contract_artifacts(artifact_dir: Path, prep_result: dict[str, Any]) -> dict[str, str]:
-    runtime_input = build_runtime_input(prep_result)
-    runtime_input_path = artifact_dir / "runtime-input.json"
-    runtime_prompt_path = artifact_dir / "runtime-prompt.md"
-    runtime_schema_path = artifact_dir / "runtime-output-schema.json"
-    write_json_atomic(runtime_input_path, runtime_input)
-    atomic_write_text(runtime_prompt_path, build_runtime_prompt(runtime_input))
-    write_json_atomic(runtime_schema_path, runtime_output_schema())
-    return {
-        "runtimeInputPath": str(runtime_input_path),
-        "runtimePromptPath": str(runtime_prompt_path),
-        "runtimeOutputSchemaPath": str(runtime_schema_path),
-    }
-
-
 def measure_context(
     csv_path: Path,
     *,
@@ -492,50 +424,6 @@ def validate_runtime_output(payload: dict[str, Any]) -> dict[str, Any]:
     if fit_status != "written":
         normalized_fit["sentence"] = None
     return normalized
-
-
-def price_display(audible: dict[str, Any], marketplace_key: str) -> str:
-    spec = SUPPORTED_MARKETPLACES.get(marketplace_key, SUPPORTED_MARKETPLACES["us"])
-    symbol = spec["currencySymbol"]
-    sale = audible.get("salePrice")
-    list_price = audible.get("listPrice")
-    if sale is not None and list_price is not None and list_price > 0:
-        discount = max(0, round((1 - (sale / list_price)) * 100))
-        return f"Price: {symbol}{sale:.2f} (-{discount}%, list price {symbol}{list_price:.2f})"
-    if sale is not None:
-        return f"Price: {symbol}{sale:.2f}"
-    if audible.get("memberHidden"):
-        return "Price: member deal / hidden"
-    return "Price: unavailable"
-
-
-def offer_description(audible: dict[str, Any]) -> str:
-    summary = normalize_space(str(audible.get("summary") or ""))
-    if not summary:
-        return ""
-    return truncate_text(summary, 520)
-
-
-def format_runtime(runtime: str) -> str:
-    text = normalize_space(runtime)
-    match = re.fullmatch(r"(\d+)\s*hrs?\s*and\s*(\d+)\s*mins?", text, re.I)
-    if match:
-        hours = int(match.group(1))
-        minutes = int(match.group(2))
-        return f"{hours}:{minutes:02d} hrs"
-    return text
-
-
-def bold_visible_text(value: str) -> str:
-    return str(value or "").translate(UNICODE_BOLD_TRANSLATION)
-
-
-def normalize_delivery_policy(value: str | None) -> str:
-    policy = normalize_space(str(value or "")).lower() or DEFAULT_DELIVERY_POLICY
-    if policy not in SUPPORTED_DELIVERY_POLICIES:
-        return DEFAULT_DELIVERY_POLICY
-    return policy
-
 
 def finalize_skill_result(prep_result: dict[str, Any], runtime_output: dict[str, Any] | None = None) -> dict[str, Any]:
     if prep_result.get("status") in {"suppress", "error"}:
@@ -637,17 +525,13 @@ def prepare_run(
     try:
         spec = validate_marketplace(marketplace)
     except ValueError as exc:
-        return {
-            "schemaVersion": 1,
-            "status": "error",
-            "reasonCode": "error_unsupported_marketplace",
-            "warnings": [],
-            "audible": {},
-            "personalData": {},
-            "artifacts": {},
-            "metadata": {"supportedMarketplaces": sorted(SUPPORTED_MARKETPLACES)},
-            "message": str(exc),
-        }
+        return make_prepare_result(
+            "error",
+            "error_unsupported_marketplace",
+            str(exc),
+            warnings=[],
+            metadata={"supportedMarketplaces": sorted(SUPPORTED_MARKETPLACES)},
+        )
 
     warnings: list[str] = []
     invocation_mode = normalize_space(str(merged.get("invocationMode") or "manual")).lower() or "manual"
@@ -657,7 +541,16 @@ def prepare_run(
         privacy_mode = "normal"
 
     notes_file = normalize_space(str(merged.get("preferencesPath") or merged.get("notesFile") or ""))
-    notes_text = resolve_notes_text(notes_file, str(merged.get("notesText") or ""))
+    try:
+        notes_text = resolve_notes_text(notes_file, str(merged.get("notesText") or ""))
+    except FileNotFoundError as exc:
+        return make_prepare_result(
+            "error",
+            "error_missing_notes_file",
+            str(exc),
+            warnings=warnings,
+            metadata={"marketplace": spec["key"]},
+        )
 
     notes_warning_chars = int(merged.get("notesWarningChars") or DEFAULT_NOTES_WARNING_CHARS)
     if notes_text and len(notes_text) > notes_warning_chars:
@@ -673,17 +566,13 @@ def prepare_run(
     if merged.get("goodreadsCsvPath"):
         csv_path = Path(str(merged["goodreadsCsvPath"])).expanduser()
         if not csv_path.exists():
-            return {
-                "schemaVersion": 1,
-                "status": "error",
-                "reasonCode": "error_missing_csv",
-                "warnings": warnings,
-                "audible": {},
-                "personalData": {},
-                "artifacts": {},
-                "metadata": {"marketplace": spec["key"]},
-                "message": f"Goodreads CSV not found at {csv_path}.",
-            }
+            return make_prepare_result(
+                "error",
+                "error_missing_csv",
+                f"Goodreads CSV not found at {csv_path}.",
+                warnings=warnings,
+                metadata={"marketplace": spec["key"]},
+            )
 
     mode, ready_reason = effective_mode(csv_path, notes_text)
     requested_url = normalize_space(str(merged.get("audibleDealUrl") or spec["dealUrl"]))
@@ -692,77 +581,53 @@ def prepare_run(
         html_text, final_url = fetcher(requested_url)
         candidate = parse_audible_deal(html_text, final_url, requested_url)
     except NoActivePromotionError as exc:
-        return {
-            "schemaVersion": 1,
-            "status": "suppress",
-            "reasonCode": "suppress_no_active_promotion",
-            "warnings": warnings,
-            "audible": {"marketplace": spec["key"], "requestedUrl": requested_url},
-            "personalData": {"mode": mode, "privacyMode": privacy_mode},
-            "artifacts": {},
-            "metadata": {
-                "marketplace": spec["key"],
-                "marketplaceLabel": spec["label"],
-                "storeLocalDate": store_date.isoformat(),
-                "timezone": spec["timezone"],
-                "shortCircuit": True,
-            },
-            "message": str(exc),
-        }
+        return make_audible_fetch_result(
+            status="suppress",
+            reason_code="suppress_no_active_promotion",
+            message=str(exc),
+            warnings=warnings,
+            spec=spec,
+            requested_url=requested_url,
+            mode=mode,
+            privacy_mode=privacy_mode,
+            store_date=store_date,
+        )
     except AudibleBlockedError as exc:
-        return {
-            "schemaVersion": 1,
-            "status": "error",
-            "reasonCode": "error_audible_blocked",
-            "warnings": warnings,
-            "audible": {"marketplace": spec["key"], "requestedUrl": requested_url},
-            "personalData": {"mode": mode, "privacyMode": privacy_mode},
-            "artifacts": {},
-            "metadata": {
-                "marketplace": spec["key"],
-                "marketplaceLabel": spec["label"],
-                "storeLocalDate": store_date.isoformat(),
-                "timezone": spec["timezone"],
-                "shortCircuit": True,
-            },
-            "message": str(exc),
-        }
+        return make_audible_fetch_result(
+            status="error",
+            reason_code="error_audible_blocked",
+            message=str(exc),
+            warnings=warnings,
+            spec=spec,
+            requested_url=requested_url,
+            mode=mode,
+            privacy_mode=privacy_mode,
+            store_date=store_date,
+        )
     except AudibleFetchError as exc:
-        return {
-            "schemaVersion": 1,
-            "status": "error",
-            "reasonCode": "error_audible_fetch_failed",
-            "warnings": warnings,
-            "audible": {"marketplace": spec["key"], "requestedUrl": requested_url},
-            "personalData": {"mode": mode, "privacyMode": privacy_mode},
-            "artifacts": {},
-            "metadata": {
-                "marketplace": spec["key"],
-                "marketplaceLabel": spec["label"],
-                "storeLocalDate": store_date.isoformat(),
-                "timezone": spec["timezone"],
-                "shortCircuit": True,
-            },
-            "message": str(exc),
-        }
+        return make_audible_fetch_result(
+            status="error",
+            reason_code="error_audible_fetch_failed",
+            message=str(exc),
+            warnings=warnings,
+            spec=spec,
+            requested_url=requested_url,
+            mode=mode,
+            privacy_mode=privacy_mode,
+            store_date=store_date,
+        )
     except AudibleParseError as exc:
-        return {
-            "schemaVersion": 1,
-            "status": "error",
-            "reasonCode": "error_audible_parse_failed",
-            "warnings": warnings,
-            "audible": {"marketplace": spec["key"], "requestedUrl": requested_url},
-            "personalData": {"mode": mode, "privacyMode": privacy_mode},
-            "artifacts": {},
-            "metadata": {
-                "marketplace": spec["key"],
-                "marketplaceLabel": spec["label"],
-                "storeLocalDate": store_date.isoformat(),
-                "timezone": spec["timezone"],
-                "shortCircuit": True,
-            },
-            "message": str(exc),
-        }
+        return make_audible_fetch_result(
+            status="error",
+            reason_code="error_audible_parse_failed",
+            message=str(exc),
+            warnings=warnings,
+            spec=spec,
+            requested_url=requested_url,
+            mode=mode,
+            privacy_mode=privacy_mode,
+            store_date=store_date,
+        )
 
     state_path = Path(str(merged.get("stateFile") or "")).expanduser() if merged.get("stateFile") else None
     state = load_state(state_path)
@@ -942,10 +807,11 @@ def prepare_run(
     )
 
     artifact_dir = Path(str(merged.get("artifactDir") or default_artifact_dir())).expanduser()
+    allow_model_personalization = privacy_mode != "minimal" and bool(notes_text or rated_or_reviewed_entries)
     personal_data = {
         "mode": mode,
         "privacyMode": privacy_mode,
-        "allowModelPersonalization": privacy_mode != "minimal" and bool(notes_text or rated_or_reviewed_entries),
+        "allowModelPersonalization": allow_model_personalization,
         "exactShelfMatch": exact_shelf,
         "matchedEntries": personal_match["matches"],
         "csv": {
@@ -964,7 +830,14 @@ def prepare_run(
             "present": bool(notes_text),
         },
     }
-    artifacts = write_artifacts(artifact_dir, candidate, personal_data, fit_context, review_source, notes_text)
+    artifacts = write_artifacts(
+        artifact_dir,
+        candidate,
+        personal_data,
+        fit_context if allow_model_personalization else None,
+        review_source if allow_model_personalization else None,
+        notes_text if allow_model_personalization else "",
+    )
     result = {
         "schemaVersion": 1,
         "status": "ready",

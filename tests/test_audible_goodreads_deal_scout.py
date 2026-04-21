@@ -262,9 +262,15 @@ class AudibleGoodreadsDealScoutTests(unittest.TestCase):
             output_text = "".join(call.args[0] for call in fake_stdout.write.call_args_list)
         self.assertEqual(rc, 0)
         payload = json.loads(output_text)
+        self.assertTrue(payload["frontmatter"]["hasLicense"])
         self.assertTrue(payload["frontmatter"]["hasSkillKey"])
+        self.assertTrue(payload["frontmatter"]["hasCategory"])
+        self.assertTrue(payload["publishIgnore"]["exists"])
+        self.assertTrue(payload["publishIgnore"]["requiredExclusionsPresent"])
+        self.assertEqual(payload["publishIgnore"]["missingExclusions"], [])
         self.assertTrue(payload["privacyAudit"]["ok"])
         self.assertIn("clawhub skill publish", payload["recommendedPublishCommand"])
+        self.assertTrue(payload["recommendedPublishCommand"].startswith("clawhub skill publish . "))
 
     def test_repo_audit_detects_private_machine_markers(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -558,7 +564,10 @@ class AudibleGoodreadsDealScoutTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp = Path(tmp_dir)
             export_path = tmp / "goodreads.csv"
-            write_rows(export_path, [row(title="Old Favorite", author="A Writer", shelf="read", rating="5")])
+            write_rows(
+                export_path,
+                [row(title="Old Favorite", author="A Writer", shelf="read", rating="5", review="Loved the ideas...!!")],
+            )
             result = core.prepare_run(
                 {
                     "artifactDir": str(tmp / "artifacts"),
@@ -569,7 +578,52 @@ class AudibleGoodreadsDealScoutTests(unittest.TestCase):
                 },
                 fetcher=fake_fetcher,
             )
-        self.assertFalse(result["personalData"]["allowModelPersonalization"])
+            self.assertFalse(result["personalData"]["allowModelPersonalization"])
+            self.assertNotIn("fitContextPath", result["artifacts"])
+            self.assertNotIn("reviewSourcePath", result["artifacts"])
+            self.assertNotIn("notesPath", result["artifacts"])
+            runtime_input = json.loads(Path(result["artifacts"]["runtimeInputPath"]).read_text(encoding="utf-8"))
+            prompt_text = Path(result["artifacts"]["runtimePromptPath"]).read_text(encoding="utf-8")
+            self.assertEqual(runtime_input["personalDataSummary"]["fitContextApproxTokens"], 0)
+            self.assertFalse(runtime_input["personalDataSummary"]["notesPresent"])
+            self.assertIn("No personal CSV or notes artifacts are provided for this run", prompt_text)
+
+    def test_prepare_returns_explicit_error_for_missing_notes_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            result = core.prepare_run(
+                {
+                    "artifactDir": str(tmp / "artifacts"),
+                    "audibleMarketplace": "us",
+                    "notesFile": str(tmp / "missing-notes.md"),
+                },
+                fetcher=fake_fetcher,
+            )
+        self.assertEqual(result["status"], "error")
+        self.assertEqual(result["reasonCode"], "error_missing_notes_file")
+        self.assertIn("Preference notes file not found", result["message"])
+
+    def test_prepare_rejects_missing_csv_override_header(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            export_path = tmp / "goodreads.csv"
+            write_rows(export_path, [row(title="Signal Fire", author="Jane Story", shelf="read", rating="5")])
+            result = core.prepare_run(
+                {
+                    "artifactDir": str(tmp / "artifacts"),
+                    "audibleMarketplace": "us",
+                    "goodreadsCsvPath": str(export_path),
+                    "csvColumnOverrides": {"title": "Wrong Header"},
+                },
+                fetcher=fake_fetcher,
+            )
+        self.assertEqual(result["status"], "error")
+        self.assertEqual(result["reasonCode"], "error_csv_unreadable")
+        self.assertIn("references missing header 'Wrong Header'", result["message"])
+
+    def test_core_reexports_canonical_shared_helpers(self) -> None:
+        self.assertEqual(core.approx_token_count(""), 0)
+        self.assertEqual(core.normalize_review_text("<p>Wait...!!</p>"), "Wait.")
 
     def test_show_csv_headers_returns_detected_headers(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
