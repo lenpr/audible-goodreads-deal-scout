@@ -420,6 +420,7 @@ Useful checks:
 ```
 
 If your OpenClaw host runs `exec` in `allowlist` mode, prefer this bundled wrapper instead of `python3 -m ...`. It gives the skill one narrow executable path that can be allowlisted cleanly for scheduled runs.
+- Scheduled runs cannot stop for interactive exec approval. If your OpenClaw host keeps `exec` in `allowlist` mode, allowlist the installed wrapper path before enabling daily automation, for example `~/.openclaw/skills/audible-goodreads-deal-scout/bin/audible-goodreads-deal-scout`.
 
 ## Advanced CLI usage
 
