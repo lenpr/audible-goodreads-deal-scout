@@ -80,6 +80,10 @@ If you want one straightforward setup path, use this:
 sh ./scripts/audible-goodreads-deal-scout.sh setup
 ```
 
+By default, the skill writes its config, state, and artifacts under `.audible-goodreads-deal-scout/` in the active OpenClaw workspace.
+
+That storage lives in the workspace, not inside `skills/audible-goodreads-deal-scout/`, because `openclaw skills install` and `openclaw skills update --force` can replace the installed skill folder.
+
 Only point `goodreadsCsvPath`, `notesFile`, `configPath`, and `stateFile` at files or directories you actually want this skill to read or write.
 
 5. Then evaluate the current deal:

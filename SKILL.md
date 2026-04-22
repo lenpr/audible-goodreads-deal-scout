@@ -69,6 +69,10 @@ If the skill is not configured yet, gather:
 
 Then write config through:
 
+- If the user does not request a custom path, use the default workspace-root storage path: `<workspace>/.audible-goodreads-deal-scout/`.
+- Do not invent legacy names like `.audible-goodreads-deal`.
+- Do not store mutable config, state, or artifacts inside `{baseDir}` or the installed skill folder. `openclaw skills install` and `openclaw skills update --force` replace the workspace skill directory.
+
 ```bash
 sh "{baseDir}/scripts/audible-goodreads-deal-scout.sh" setup \
   --config-path "<config-path>" \

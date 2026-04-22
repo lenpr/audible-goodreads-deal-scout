@@ -3,6 +3,7 @@
 ## 0.1.3
 
 - Invoke the published shell wrapper through `sh` in `SKILL.md` and README examples so official OpenClaw installs still work even when the installed script loses its executable bit
+- Clarify that default config, state, and artifact storage belongs under `.audible-goodreads-deal-scout/` in the active OpenClaw workspace, not inside the installed skill folder or under the legacy `.audible-goodreads-deal` name
 - Clarify in the README that configured CSV, notes, config, and state paths should only point at files the user intends the skill to read or write
 - Add README guidance to review delivery settings before enabling daily automation or cron registration
 - Soften transaction-heavy README wording for a skill that evaluates promotions rather than making purchases
