@@ -15,9 +15,11 @@ The main adjustments made here to align with that:
 
 - stronger top-of-README onboarding
 - clearer privacy and delivery guidance
+- less transaction-heavy wording in public docs for an informational skill
 - supported marketplace list framed as tested support, not just config keys
 - explicit release checklist
 - `.clawhubignore`, `LICENSE.txt`, and `CHANGELOG.md`
+- post-publish wrapper and license verification against the live ClawHub artifact
 
 Remaining improvement targets:
 

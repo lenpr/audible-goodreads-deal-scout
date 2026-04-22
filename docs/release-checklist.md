@@ -32,6 +32,7 @@ Use this before publishing a new version to ClawHub.
 - Confirm `.clawhubignore` excludes tests, docs, and local/generated state
 - Confirm placeholder paths and example content stay generic and public-safe
 - Confirm `README.md`, `CHANGELOG.md`, and `config.example.json` still match the current behavior
+- Keep public wording specific to evaluation and delivery; avoid language that implies checkout, payments, or wallet behavior if the skill does not actually do those things
 
 ## Versioning
 
@@ -39,3 +40,4 @@ Use this before publishing a new version to ClawHub.
 - Add the release note to `CHANGELOG.md`
 - Publish with `clawhub publish . ...`
 - After publish, run `clawhub inspect <slug> --files` and confirm the bundled wrapper and license files match what `SKILL.md` and the repo root document
+- After publish, run `clawhub inspect <slug>` and confirm the displayed marketplace license matches the intended license declared in `SKILL.md` and `LICENSE.txt`

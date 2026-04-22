@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.3
+
+- Clarify in the README that configured CSV, notes, config, and state paths should only point at files the user intends the skill to read or write
+- Add README guidance to review delivery settings before enabling daily automation or cron registration
+- Soften transaction-heavy README wording for a skill that evaluates promotions rather than making purchases
+- Add a release-check step to verify the live ClawHub license summary matches `SKILL.md` and `LICENSE.txt`
+
 ## 0.1.2
 
 - Rename the published shell wrapper to `scripts/audible-goodreads-deal-scout.sh` so the ClawHub bundle exposes the documented entrypoint

@@ -1,12 +1,12 @@
 # Audible Goodreads Deal Scout
 
-`audible-goodreads-deal-scout` is a **ClawHub / OpenClaw skill** for evaluating Audible daily deals.
+`audible-goodreads-deal-scout` is a **ClawHub / OpenClaw skill** for evaluating Audible daily promotions.
 
 If you are looking at this repository on GitHub, you are looking at the **source for a publishable ClawHub skill**, not a generic Python app or a standalone website.
 
 Its job is simple: help you decide whether an Audible daily promotion is actually worth your attention.
 
-It is built for people who do **not** want raw deal spam. Instead of only showing the discounted book, the skill combines:
+It is built for people who do **not** want raw promo noise. Instead of only showing the featured title, the skill combines:
 - the public Goodreads rating
 - your Goodreads shelves, if you provide a CSV
 - your own reading preferences, if you provide notes
@@ -45,15 +45,15 @@ clawhub login
 clawhub publish . \
   --slug audible-goodreads-deal-scout \
   --name "Audible Goodreads Deal Scout" \
-  --version 0.1.2 \
-  --changelog "Rename published wrapper and license files for ClawHub packaging" \
+  --version 0.1.3 \
+  --changelog "Tighten README safety guidance and release checks" \
   --tags latest
 ```
 
 ## Start here
 
 Use this skill if you want:
-- a daily Audible deal filter instead of a daily Audible deal feed
+- a daily Audible promotion filter instead of a raw daily promotion feed
 - a way to suppress books you already read
 - a way to fast-track books you already saved on Goodreads
 - a short fit paragraph that explains why a book may work for you, and what may not
@@ -79,6 +79,8 @@ If you want one straightforward setup path, use this:
 ```bash
 ./scripts/audible-goodreads-deal-scout.sh setup
 ```
+
+Only point `goodreadsCsvPath`, `notesFile`, `configPath`, and `stateFile` at files or directories you actually want this skill to read or write.
 
 5. Then evaluate the current deal:
 
@@ -176,7 +178,7 @@ This is the **public Goodreads average**, not your own rating.
 Good starting points:
 - `4.0` if you want to be stricter
 - `3.8` if you want a balanced default
-- `3.6` or `3.7` if you want more deals to pass through
+- `3.6` or `3.7` if you want more titles to pass through
 
 ### Goodreads shelf rules
 
@@ -200,7 +202,7 @@ If you do nothing, the default is `us`.
 
 Support here means the repo has fixture-backed coverage for:
 - daily-promotion detection
-- discounted price extraction
+- promotional price extraction
 - book identity extraction
 
 Live marketplace behavior can still vary. A supported store may still return:
@@ -222,6 +224,7 @@ This part should be explicit.
 
 - The Python prep layer reads your Goodreads CSV locally.
 - The Python prep layer also reads your notes file locally.
+- The skill will read whatever file paths you configure, so keep those paths limited to the files you intend it to use.
 - The model step may use fit-context data unless you set `privacyMode` to `minimal`.
 - In `privacyMode: "minimal"`, the skill still uses local shelf logic, but it does **not** pass your personal CSV or notes content into the model fit step.
 - Delivery targets are whatever you configure in your own OpenClaw runtime.
@@ -416,11 +419,12 @@ Useful checks:
 
 ```bash
 ./scripts/audible-goodreads-deal-scout.sh show-csv-headers "/absolute/path/to/goodreads_library_export.csv"
-./scripts/audible-goodreads-deal-scout.sh publish-audit --version 0.1.2 --tags latest
+./scripts/audible-goodreads-deal-scout.sh publish-audit --version 0.1.3 --tags latest
 ```
 
 If your OpenClaw host runs `exec` in `allowlist` mode, prefer this bundled wrapper instead of `python3 -m ...`. It gives the skill one narrow executable path that can be allowlisted cleanly for scheduled runs.
 - Scheduled runs cannot stop for interactive exec approval. If your OpenClaw host keeps `exec` in `allowlist` mode, allowlist the installed wrapper path before enabling daily automation, for example `~/.openclaw/skills/audible-goodreads-deal-scout/scripts/audible-goodreads-deal-scout.sh`.
+- Before enabling `dailyAutomation` or `--register-cron`, confirm the configured delivery channel and target are the ones you actually want the skill to use through your local OpenClaw runtime.
 
 ## Advanced CLI usage
 
@@ -444,7 +448,7 @@ Useful helper commands:
 ```bash
 ./scripts/audible-goodreads-deal-scout.sh show-csv-headers "/absolute/path/to/goodreads_library_export.csv"
 ./scripts/audible-goodreads-deal-scout.sh measure-context --goodreads-csv "/absolute/path/to/goodreads_library_export.csv" --output /tmp/fit-context.json
-./scripts/audible-goodreads-deal-scout.sh publish-audit --version 0.1.2
+./scripts/audible-goodreads-deal-scout.sh publish-audit --version 0.1.3
 ```
 
 Finalize and deliver in one step:
@@ -474,15 +478,15 @@ Finalize and deliver in one step:
 Before publishing, run:
 
 ```bash
-./scripts/audible-goodreads-deal-scout.sh publish-audit --version 0.1.2 --tags latest
+./scripts/audible-goodreads-deal-scout.sh publish-audit --version 0.1.3 --tags latest
 ```
 
 ## Why this is worth publishing
 
-The value is not just “show me today’s Audible deal.”
+The value is not just “show me today’s Audible promotion.”
 
 The real value is:
-- filtering instead of deal spam
+- filtering instead of promo noise
 - combining public quality with personal fit
 - respecting `read`, `currently-reading`, and `to-read`
 - optional proactive delivery into a real channel
