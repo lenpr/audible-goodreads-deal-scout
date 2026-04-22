@@ -41,7 +41,7 @@ The skill runtime must return JSON only in this shape:
 Do not fetch Audible yourself in model text. Always start with the prep layer:
 
 ```bash
-"{baseDir}/bin/audible-goodreads-deal-scout" prepare --config-path "<config-path>" --invocation-mode manual
+"{baseDir}/scripts/audible-goodreads-deal-scout" prepare --config-path "<config-path>" --invocation-mode manual
 ```
 
 Prep returns JSON with:
@@ -70,7 +70,7 @@ If the skill is not configured yet, gather:
 Then write config through:
 
 ```bash
-"{baseDir}/bin/audible-goodreads-deal-scout" setup \
+"{baseDir}/scripts/audible-goodreads-deal-scout" setup \
   --config-path "<config-path>" \
   --audible-marketplace "<marketplace>" \
   --threshold "<threshold>" \
@@ -96,7 +96,7 @@ For `ready_*` prep results:
 5. Finalize through:
 
 ```bash
-"{baseDir}/bin/audible-goodreads-deal-scout" finalize \
+"{baseDir}/scripts/audible-goodreads-deal-scout" finalize \
   --prepare-json "<prepare-result-path>" \
   --runtime-output "<runtime-output-path>"
 ```
@@ -104,7 +104,7 @@ For `ready_*` prep results:
 If the user wants the result routed to a configured channel:
 
 ```bash
-"{baseDir}/bin/audible-goodreads-deal-scout" run-and-deliver \
+"{baseDir}/scripts/audible-goodreads-deal-scout" run-and-deliver \
   --config-path "<config-path>" \
   --prepare-json "<prepare-result-path>" \
   --runtime-output "<runtime-output-path>"
@@ -155,5 +155,5 @@ Fallback lines:
 For scheduled runs, prep with `--invocation-mode scheduled`. If prep returns `suppress_duplicate_scheduled_run`, stop quietly. After a surfaced scheduled result, mark the deal as emitted with:
 
 ```bash
-"{baseDir}/bin/audible-goodreads-deal-scout" mark-emitted --state-file "<state-file>" --deal-key "<deal-key>"
+"{baseDir}/scripts/audible-goodreads-deal-scout" mark-emitted --state-file "<state-file>" --deal-key "<deal-key>"
 ```

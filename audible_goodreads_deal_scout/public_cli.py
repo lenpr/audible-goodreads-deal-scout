@@ -101,7 +101,7 @@ def build_parser() -> argparse.ArgumentParser:
         "publish-audit",
         help="Check that the skill bundle is shaped correctly for ClawHub publishing.",
     )
-    audit_parser.add_argument("--version", default="0.1.0")
+    audit_parser.add_argument("--version", default="0.1.1")
     audit_parser.add_argument("--tags", default="latest")
 
     finalize_parser = subparsers.add_parser(
@@ -286,7 +286,7 @@ def command_publish_audit(args: argparse.Namespace) -> int:
         "SKILL.md": skill_dir / "SKILL.md",
         "README.md": skill_dir / "README.md",
         "config.example.json": skill_dir / "config.example.json",
-        "bin/audible-goodreads-deal-scout": skill_dir / "bin" / "audible-goodreads-deal-scout",
+        "scripts/audible-goodreads-deal-scout": skill_dir / "scripts" / "audible-goodreads-deal-scout",
         "agents/openai.yaml": skill_dir / "agents" / "openai.yaml",
         "audible_goodreads_deal_scout/public_cli.py": skill_dir / "audible_goodreads_deal_scout" / "public_cli.py",
         "audible_goodreads_deal_scout/core.py": skill_dir / "audible_goodreads_deal_scout" / "core.py",
@@ -340,7 +340,7 @@ def command_publish_audit(args: argparse.Namespace) -> int:
         "privacyAudit": leak_audit,
         "supportedMarketplaces": sorted(core.SUPPORTED_MARKETPLACES),
         "recommendedPublishCommand": (
-            'clawhub skill publish . --slug audible-goodreads-deal-scout '
+            'clawhub publish . --slug audible-goodreads-deal-scout '
             f'--name "Audible Goodreads Deal Scout" --version {args.version} --tags {args.tags}'
         ),
         "warnings": warnings,

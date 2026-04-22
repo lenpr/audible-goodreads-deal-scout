@@ -262,7 +262,7 @@ class AudibleGoodreadsDealScoutTests(unittest.TestCase):
             output_text = "".join(call.args[0] for call in fake_stdout.write.call_args_list)
         self.assertEqual(rc, 0)
         payload = json.loads(output_text)
-        self.assertTrue(payload["files"]["bin/audible-goodreads-deal-scout"])
+        self.assertTrue(payload["files"]["scripts/audible-goodreads-deal-scout"])
         self.assertTrue(payload["frontmatter"]["hasLicense"])
         self.assertTrue(payload["frontmatter"]["hasSkillKey"])
         self.assertTrue(payload["frontmatter"]["hasCategory"])
@@ -270,8 +270,8 @@ class AudibleGoodreadsDealScoutTests(unittest.TestCase):
         self.assertTrue(payload["publishIgnore"]["requiredExclusionsPresent"])
         self.assertEqual(payload["publishIgnore"]["missingExclusions"], [])
         self.assertTrue(payload["privacyAudit"]["ok"])
-        self.assertIn("clawhub skill publish", payload["recommendedPublishCommand"])
-        self.assertTrue(payload["recommendedPublishCommand"].startswith("clawhub skill publish . "))
+        self.assertIn("clawhub publish", payload["recommendedPublishCommand"])
+        self.assertTrue(payload["recommendedPublishCommand"].startswith("clawhub publish . "))
 
     def test_repo_audit_detects_private_machine_markers(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
