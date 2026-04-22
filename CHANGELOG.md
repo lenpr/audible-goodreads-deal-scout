@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.2
+
+- Rename the published shell wrapper to `scripts/audible-goodreads-deal-scout.sh` so the ClawHub bundle exposes the documented entrypoint
+- Rename the repository license file to `LICENSE.txt` and require it in the publish audit so extensionless files do not disappear from published bundles
+- Update release guidance to verify the published wrapper and license files after upload
+
 ## 0.1.1
 
 - Move the published wrapper entrypoint from `bin/` to `scripts/` so the package layout matches ClawHub skill conventions

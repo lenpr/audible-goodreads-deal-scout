@@ -6,7 +6,7 @@ Use this before publishing a new version to ClawHub.
 
 - Run `python3 -m py_compile audible_goodreads_deal_scout/*.py tests/*.py`
 - Run `python3 -m unittest discover -s tests -p 'test_*.py'`
-- Run `./scripts/audible-goodreads-deal-scout publish-audit --version <version> --tags latest`
+- Run `./scripts/audible-goodreads-deal-scout.sh publish-audit --version <version> --tags latest`
 - Optional: run the local OpenClaw skill packager/validator against `.` if you use that publish workflow on this machine
 
 ## Runtime confidence
@@ -38,4 +38,4 @@ Use this before publishing a new version to ClawHub.
 - Bump version in your release command
 - Add the release note to `CHANGELOG.md`
 - Publish with `clawhub publish . ...`
-- After publish, run `clawhub inspect <slug> --files` and confirm the bundled wrapper/artifact layout matches what `SKILL.md` documents
+- After publish, run `clawhub inspect <slug> --files` and confirm the bundled wrapper and license files match what `SKILL.md` and the repo root document

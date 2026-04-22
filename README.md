@@ -45,8 +45,8 @@ clawhub login
 clawhub publish . \
   --slug audible-goodreads-deal-scout \
   --name "Audible Goodreads Deal Scout" \
-  --version 0.1.1 \
-  --changelog "Move published wrapper entrypoint to scripts" \
+  --version 0.1.2 \
+  --changelog "Rename published wrapper and license files for ClawHub packaging" \
   --tags latest
 ```
 
@@ -77,13 +77,13 @@ If you want one straightforward setup path, use this:
 4. Run:
 
 ```bash
-./scripts/audible-goodreads-deal-scout setup
+./scripts/audible-goodreads-deal-scout.sh setup
 ```
 
 5. Then evaluate the current deal:
 
 ```bash
-./scripts/audible-goodreads-deal-scout prepare \
+./scripts/audible-goodreads-deal-scout.sh prepare \
   --config-path .audible-goodreads-deal-scout/config.json
 ```
 
@@ -340,7 +340,7 @@ If you want to see the whole flow once from start to finish, this is the cleanes
 1. Write a config and optional notes/delivery settings:
 
 ```bash
-./scripts/audible-goodreads-deal-scout setup \
+./scripts/audible-goodreads-deal-scout.sh setup \
   --non-interactive \
   --config-path .audible-goodreads-deal-scout/config.json \
   --audible-marketplace us \
@@ -355,7 +355,7 @@ If you want to see the whole flow once from start to finish, this is the cleanes
 2. Prepare today's deal:
 
 ```bash
-./scripts/audible-goodreads-deal-scout prepare \
+./scripts/audible-goodreads-deal-scout.sh prepare \
   --config-path .audible-goodreads-deal-scout/config.json
 ```
 
@@ -388,7 +388,7 @@ That writes the working artifacts into `.audible-goodreads-deal-scout/artifacts/
 4. Finalize the public result contract:
 
 ```bash
-./scripts/audible-goodreads-deal-scout finalize \
+./scripts/audible-goodreads-deal-scout.sh finalize \
   --prepare-json .audible-goodreads-deal-scout/artifacts/current/prepare-result.json \
   --runtime-output /tmp/runtime-output.json
 ```
@@ -396,7 +396,7 @@ That writes the working artifacts into `.audible-goodreads-deal-scout/artifacts/
 5. If you configured delivery, send the finished message:
 
 ```bash
-./scripts/audible-goodreads-deal-scout run-and-deliver \
+./scripts/audible-goodreads-deal-scout.sh run-and-deliver \
   --config-path .audible-goodreads-deal-scout/config.json \
   --prepare-json .audible-goodreads-deal-scout/artifacts/current/prepare-result.json \
   --runtime-output /tmp/runtime-output.json
@@ -415,19 +415,19 @@ Three issues cause most confusing runs:
 Useful checks:
 
 ```bash
-./scripts/audible-goodreads-deal-scout show-csv-headers "/absolute/path/to/goodreads_library_export.csv"
-./scripts/audible-goodreads-deal-scout publish-audit --version 0.1.1 --tags latest
+./scripts/audible-goodreads-deal-scout.sh show-csv-headers "/absolute/path/to/goodreads_library_export.csv"
+./scripts/audible-goodreads-deal-scout.sh publish-audit --version 0.1.2 --tags latest
 ```
 
 If your OpenClaw host runs `exec` in `allowlist` mode, prefer this bundled wrapper instead of `python3 -m ...`. It gives the skill one narrow executable path that can be allowlisted cleanly for scheduled runs.
-- Scheduled runs cannot stop for interactive exec approval. If your OpenClaw host keeps `exec` in `allowlist` mode, allowlist the installed wrapper path before enabling daily automation, for example `~/.openclaw/skills/audible-goodreads-deal-scout/scripts/audible-goodreads-deal-scout`.
+- Scheduled runs cannot stop for interactive exec approval. If your OpenClaw host keeps `exec` in `allowlist` mode, allowlist the installed wrapper path before enabling daily automation, for example `~/.openclaw/skills/audible-goodreads-deal-scout/scripts/audible-goodreads-deal-scout.sh`.
 
 ## Advanced CLI usage
 
 If you prefer scripted setup instead of interactive setup:
 
 ```bash
-./scripts/audible-goodreads-deal-scout setup \
+./scripts/audible-goodreads-deal-scout.sh setup \
   --non-interactive \
   --config-path .audible-goodreads-deal-scout/config.json \
   --audible-marketplace us \
@@ -442,15 +442,15 @@ If you prefer scripted setup instead of interactive setup:
 Useful helper commands:
 
 ```bash
-./scripts/audible-goodreads-deal-scout show-csv-headers "/absolute/path/to/goodreads_library_export.csv"
-./scripts/audible-goodreads-deal-scout measure-context --goodreads-csv "/absolute/path/to/goodreads_library_export.csv" --output /tmp/fit-context.json
-./scripts/audible-goodreads-deal-scout publish-audit --version 0.1.1
+./scripts/audible-goodreads-deal-scout.sh show-csv-headers "/absolute/path/to/goodreads_library_export.csv"
+./scripts/audible-goodreads-deal-scout.sh measure-context --goodreads-csv "/absolute/path/to/goodreads_library_export.csv" --output /tmp/fit-context.json
+./scripts/audible-goodreads-deal-scout.sh publish-audit --version 0.1.2
 ```
 
 Finalize and deliver in one step:
 
 ```bash
-./scripts/audible-goodreads-deal-scout run-and-deliver \
+./scripts/audible-goodreads-deal-scout.sh run-and-deliver \
   --config-path .audible-goodreads-deal-scout/config.json \
   --prepare-json .audible-goodreads-deal-scout/artifacts/current/prepare-result.json \
   --runtime-output /tmp/runtime-output.json
@@ -460,7 +460,7 @@ Finalize and deliver in one step:
 
 - `SKILL.md`: agent-facing runtime instructions
 - `agents/openai.yaml`: interface metadata and default prompt for OpenClaw agent surfaces
-- `scripts/audible-goodreads-deal-scout`: bundled wrapper entrypoint for local CLI and OpenClaw exec-friendly invocation
+- `scripts/audible-goodreads-deal-scout.sh`: bundled wrapper entrypoint for local CLI and OpenClaw exec-friendly invocation
 - `audible_goodreads_deal_scout/core.py`: prep/orchestration logic
 - `audible_goodreads_deal_scout/rendering.py`: card rendering and delivery planning
 - `audible_goodreads_deal_scout/delivery.py`: config, cron, and delivery helpers
@@ -474,7 +474,7 @@ Finalize and deliver in one step:
 Before publishing, run:
 
 ```bash
-./scripts/audible-goodreads-deal-scout publish-audit --version 0.1.1 --tags latest
+./scripts/audible-goodreads-deal-scout.sh publish-audit --version 0.1.2 --tags latest
 ```
 
 ## Why this is worth publishing

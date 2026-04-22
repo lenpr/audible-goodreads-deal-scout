@@ -9,7 +9,7 @@ The repeated patterns were:
 - Privacy/data use is stated early
 - Supported capabilities are described conservatively
 - `SKILL.md` stays runtime-focused
-- Public repos include polish files such as `LICENSE` and `CHANGELOG.md`
+- Public repos include polish files such as `LICENSE.txt` and `CHANGELOG.md`
 
 The main adjustments made here to align with that:
 
@@ -17,7 +17,7 @@ The main adjustments made here to align with that:
 - clearer privacy and delivery guidance
 - supported marketplace list framed as tested support, not just config keys
 - explicit release checklist
-- `.clawhubignore`, `LICENSE`, and `CHANGELOG.md`
+- `.clawhubignore`, `LICENSE.txt`, and `CHANGELOG.md`
 
 Remaining improvement targets:
 
