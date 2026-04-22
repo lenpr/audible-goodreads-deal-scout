@@ -6,7 +6,8 @@ Use this before publishing a new version to ClawHub.
 
 - Run `python3 -m py_compile audible_goodreads_deal_scout/*.py tests/*.py`
 - Run `python3 -m unittest discover -s tests -p 'test_*.py'`
-- Run `./scripts/audible-goodreads-deal-scout.sh publish-audit --version <version> --tags latest`
+- Run `sh ./scripts/audible-goodreads-deal-scout.sh publish-audit --version <version> --tags latest`
+- Keep the documented `sh ./scripts/...` form unless you have verified your target install preserves executable bits on bundled scripts
 - Optional: run the local OpenClaw skill packager/validator against `.` if you use that publish workflow on this machine
 
 ## Runtime confidence
