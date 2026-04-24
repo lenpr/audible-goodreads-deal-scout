@@ -175,7 +175,11 @@ def start_external_auth(auth_path: Path, *, marketplace: str = "us") -> dict[str
         "authPath": str(auth_path.expanduser()),
         "marketplace": marketplace,
         "loginUrl": login_url,
-        "instructions": "Open loginUrl in a browser, complete Amazon login, then run audible-auth-finish with the final redirect URL.",
+        "instructions": (
+            "Open loginUrl in a browser and complete Amazon login. "
+            "After login, copy the final URL from the browser address bar, even if it is an error/not-found page. "
+            "Then run audible-auth-finish with that final redirect URL."
+        ),
     }
 
 
@@ -322,6 +326,10 @@ def _price_to_float(value: Any) -> float | None:
     return None
 
 
+def _round_price(value: float | None) -> float | None:
+    return round(value, 2) if value is not None else None
+
+
 def _collect_price_fields(payload: Any, *, path: str = "") -> list[tuple[str, Any]]:
     fields: list[tuple[str, Any]] = []
     if isinstance(payload, dict):
@@ -349,16 +357,20 @@ def parse_authenticated_pricing(product_payload: dict[str, Any], *, threshold: i
     list_price: float | None = None
     for key, value in fields:
         lowered = key.casefold()
+        if "credit" in lowered:
+            continue
         parsed = _price_to_float(value)
         if parsed is None:
             continue
         if any(marker in lowered for marker in ("list", "regular", "base", "was", "strikethrough")):
             list_price = list_price if list_price is not None else parsed
-        elif any(marker in lowered for marker in ("sale", "member", "current", "purchase", "price")):
+        elif any(marker in lowered for marker in ("sale", "member", "current", "purchase", "lowest", "price")):
             current_price = current_price if current_price is not None else parsed
     discount_percent = None
     if current_price is not None and list_price is not None and list_price > 0 and current_price < list_price:
         discount_percent = max(0, round((1 - current_price / list_price) * 100))
+    current_price = _round_price(current_price)
+    list_price = _round_price(list_price)
     plan_text = json.dumps(product, sort_keys=True, ensure_ascii=False).casefold()
     included = any(marker in plan_text for marker in ("included", "plus catalog", "all you can eat", "rodizio"))
     if discount_percent is not None and discount_percent >= threshold:

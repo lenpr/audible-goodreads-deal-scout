@@ -1342,6 +1342,7 @@ class WantToReadScanTests(unittest.TestCase):
                 "product": {
                     "asin": "B000000001",
                     "price": {
+                        "credit_price": 1.0,
                         "currency_code": "USD",
                         "list_price": {"base": 14.95},
                         "lowest_price": {"base": 4.99},

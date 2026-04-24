@@ -152,7 +152,6 @@ def format_warnings(text: str) -> list[str]:
         "abridged": r"\babridged\b",
         "dramatized": r"\bdramatized\b",
         "adaptation": r"\badaptation\b",
-        "podcast": r"\bpodcast\b",
         "course": r"\bcourse\b",
         "omnibus": r"\bomnibus\b",
     }
