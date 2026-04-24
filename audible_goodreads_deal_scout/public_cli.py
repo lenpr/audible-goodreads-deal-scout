@@ -7,6 +7,8 @@ from pathlib import Path
 
 from . import core
 from .repo_audit import scan_repo_for_leaks
+from .shared import write_json_atomic
+from .want_to_read_scan import report_json, scan_want_to_read
 
 REQUIRED_PUBLISH_IGNORE_PATTERNS = (
     ".audible-goodreads-deal-scout/",
@@ -92,6 +94,28 @@ def build_parser() -> argparse.ArgumentParser:
     measure_parser.add_argument("--csv-column", action="append", default=[])
     measure_parser.add_argument("--output")
 
+    scan_parser = subparsers.add_parser(
+        "scan-want-to-read",
+        help="Scan Goodreads Want-to-Read books for visible numeric Audible US discounts.",
+    )
+    scan_parser.add_argument("--config-path")
+    scan_parser.add_argument("--limit", type=int)
+    scan_parser.add_argument("--offset", type=int, default=0)
+    scan_parser.add_argument("--scan-order", choices=("newest", "csv", "oldest", "random"), default="newest")
+    scan_parser.add_argument("--seed")
+    scan_parser.add_argument("--max-requests", type=int, default=40)
+    scan_parser.add_argument("--request-delay", type=float, default=1.0)
+    scan_parser.add_argument("--min-discount-percent", type=int, default=10)
+    scan_parser.add_argument("--output-json")
+    scan_parser.add_argument("--output-md")
+    scan_parser.add_argument("--include-non-deals", action="store_true")
+    scan_parser.add_argument("--verbose", action="store_true")
+    scan_parser.add_argument("--refresh-cache", action="store_true")
+    scan_parser.add_argument("--no-cache", action="store_true")
+    scan_parser.add_argument("--offline-fixtures")
+    scan_parser.add_argument("--title")
+    scan_parser.add_argument("--author")
+
     mark_parser = subparsers.add_parser("mark-emitted", help="Record a scheduled run's emitted deal key after the skill finishes.")
     mark_parser.add_argument("--state-file", required=True)
     mark_parser.add_argument("--deal-key", required=True)
@@ -101,7 +125,7 @@ def build_parser() -> argparse.ArgumentParser:
         "publish-audit",
         help="Check that the skill bundle is shaped correctly for ClawHub publishing.",
     )
-    audit_parser.add_argument("--version", default="0.1.2")
+    audit_parser.add_argument("--version", default="0.1.4")
     audit_parser.add_argument("--tags", default="latest")
 
     finalize_parser = subparsers.add_parser(
@@ -269,6 +293,36 @@ def command_measure_context(args: argparse.Namespace) -> int:
     return 0
 
 
+def command_scan_want_to_read(args: argparse.Namespace) -> int:
+    payload = {
+        "configPath": args.config_path,
+        "limit": args.limit,
+        "offset": args.offset,
+        "scanOrder": args.scan_order,
+        "seed": args.seed,
+        "maxRequests": args.max_requests,
+        "requestDelay": args.request_delay,
+        "minDiscountPercent": args.min_discount_percent,
+        "outputJson": args.output_json,
+        "outputMd": args.output_md,
+        "includeNonDeals": args.include_non_deals,
+        "verbose": args.verbose,
+        "refreshCache": args.refresh_cache,
+        "noCache": args.no_cache,
+        "offlineFixtures": args.offline_fixtures,
+        "title": args.title,
+        "author": args.author,
+    }
+    report, markdown, exit_code = scan_want_to_read(payload)
+    if report.get("status") == "error":
+        if args.output_json:
+            write_json_atomic(Path(args.output_json).expanduser(), report)
+        print(report_json(report), end="")
+        return exit_code
+    print(markdown, end="")
+    return exit_code
+
+
 def command_mark_emitted(args: argparse.Namespace) -> int:
     result = core.mark_emitted(
         Path(args.state_file).expanduser(),
@@ -291,6 +345,8 @@ def command_publish_audit(args: argparse.Namespace) -> int:
         "agents/openai.yaml": skill_dir / "agents" / "openai.yaml",
         "audible_goodreads_deal_scout/public_cli.py": skill_dir / "audible_goodreads_deal_scout" / "public_cli.py",
         "audible_goodreads_deal_scout/core.py": skill_dir / "audible_goodreads_deal_scout" / "core.py",
+        "audible_goodreads_deal_scout/audible_catalog.py": skill_dir / "audible_goodreads_deal_scout" / "audible_catalog.py",
+        "audible_goodreads_deal_scout/want_to_read_scan.py": skill_dir / "audible_goodreads_deal_scout" / "want_to_read_scan.py",
     }
     skill_text = required_files["SKILL.md"].read_text(encoding="utf-8") if required_files["SKILL.md"].exists() else ""
     publish_ignore_entries = load_ignore_entries(publish_ignore_path)
@@ -454,6 +510,8 @@ def main(argv: list[str] | None = None) -> int:
         return command_show_csv_headers(args)
     if args.command == "measure-context":
         return command_measure_context(args)
+    if args.command == "scan-want-to-read":
+        return command_scan_want_to_read(args)
     if args.command == "mark-emitted":
         return command_mark_emitted(args)
     if args.command == "publish-audit":

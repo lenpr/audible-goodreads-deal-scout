@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.4
+
+- Add a manual `scan-want-to-read` command for checking Goodreads `to-read` books against visible Audible US numeric discounts
+- Add conservative Audible catalog search, pricing parsing, parsed-result cache, request budgeting, and block-like circuit breaker handling for the new scan
+- Add compact Markdown and structured JSON reports for Want-to-Read discount scans
+- Add offline fixture coverage for scan selection, matching, pricing, request budget behavior, cached block failures, and compact report output
+
 ## 0.1.3
 
 - Invoke the published shell wrapper through `sh` in `SKILL.md` and README examples so official OpenClaw installs still work even when the installed script loses its executable bit

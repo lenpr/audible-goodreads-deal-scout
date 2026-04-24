@@ -1,10 +1,10 @@
 # Audible Goodreads Deal Scout
 
-`audible-goodreads-deal-scout` is a **ClawHub / OpenClaw skill** for evaluating Audible daily promotions.
+`audible-goodreads-deal-scout` is a **ClawHub / OpenClaw skill** for evaluating Audible daily promotions and manually auditing your Goodreads Want-to-Read shelf for visible Audible discounts.
 
 If you are looking at this repository on GitHub, you are looking at the **source for a publishable ClawHub skill**, not a generic Python app or a standalone website.
 
-Its job is simple: help you decide whether an Audible daily promotion is actually worth your attention.
+Its job is simple: help you decide whether an Audible promotion is actually worth your attention.
 
 It is built for people who do **not** want raw promo noise. Instead of only showing the featured title, the skill combines:
 - the public Goodreads rating
@@ -16,6 +16,7 @@ It is built for people who do **not** want raw promo noise. Instead of only show
 
 Use this skill if you want OpenClaw to:
 - check the current Audible daily promotion
+- scan your Goodreads Want-to-Read shelf for visible Audible US discounts
 - decide whether the book clears a quality bar
 - notice if you already read it or already saved it
 - write a short fit paragraph about why it may work for you
@@ -45,8 +46,8 @@ clawhub login
 clawhub publish . \
   --slug audible-goodreads-deal-scout \
   --name "Audible Goodreads Deal Scout" \
-  --version 0.1.3 \
-  --changelog "Tighten README safety guidance and release checks" \
+  --version 0.1.4 \
+  --changelog "Add manual Goodreads Want-to-Read Audible discount scan" \
   --tags latest
 ```
 
@@ -54,6 +55,7 @@ clawhub publish . \
 
 Use this skill if you want:
 - a daily Audible promotion filter instead of a raw daily promotion feed
+- a manual Want-to-Read shelf scan for currently visible Audible US discounts
 - a way to suppress books you already read
 - a way to fast-track books you already saved on Goodreads
 - a short fit paragraph that explains why a book may work for you, and what may not
@@ -193,6 +195,58 @@ If you provide a Goodreads CSV:
 
 That `to-read` override is intentional. If you already saved the book for later, that is treated as a strong positive signal and it can override the public Goodreads threshold.
 
+## Scan your Want-to-Read shelf for Audible discounts
+
+If you configured a Goodreads CSV, you can also run a manual audit of books on your Goodreads `to-read` shelf:
+
+```bash
+sh ./scripts/audible-goodreads-deal-scout.sh scan-want-to-read \
+  --config-path .audible-goodreads-deal-scout/config.json \
+  --limit 40 \
+  --offset 0
+```
+
+This is intentionally an on-demand scan, not a scheduled monitor. It helps answer: "Which books I already want to read appear to have a visible Audible discount right now?"
+
+Default behavior:
+- scans Audible US only in this first version
+- reads the current Goodreads CSV fresh each run
+- searches the first Audible result page for each selected Goodreads book
+- inspects the first three Audible result cards
+- fetches a product page only when the search card already shows plausible numeric discount evidence
+- prints compact Markdown to stdout
+- keeps non-deals out of the default Markdown so the useful deals stay visible
+
+Useful batching pattern for larger shelves:
+
+```bash
+# Day 1
+sh ./scripts/audible-goodreads-deal-scout.sh scan-want-to-read \
+  --config-path .audible-goodreads-deal-scout/config.json \
+  --scan-order newest \
+  --limit 40 \
+  --offset 0
+
+# Day 2
+sh ./scripts/audible-goodreads-deal-scout.sh scan-want-to-read \
+  --config-path .audible-goodreads-deal-scout/config.json \
+  --scan-order newest \
+  --limit 40 \
+  --offset 40
+```
+
+Useful output flags:
+
+```bash
+sh ./scripts/audible-goodreads-deal-scout.sh scan-want-to-read \
+  --config-path .audible-goodreads-deal-scout/config.json \
+  --output-json .audible-goodreads-deal-scout/reports/want-to-read.json \
+  --output-md .audible-goodreads-deal-scout/reports/want-to-read.md \
+  --include-non-deals
+```
+
+The scan is deliberately conservative. If Audible hides cash pricing behind credits, membership language, or extra buying-choice UI, the result is marked as hidden or unknown instead of guessing. If a title or author match is ambiguous, it is marked for review instead of being treated as a deal.
+
 ## Supported marketplaces
 
 Supported and fixture-tested marketplace keys:
@@ -213,6 +267,8 @@ Live marketplace behavior can still vary. A supported store may still return:
 - no active promotion
 - a blocked page
 - a page-layout drift error
+
+The Want-to-Read discount scan is currently US-only. The daily-promotion workflow remains fixture-tested for the marketplace keys listed above.
 
 If you want a non-US store, set `audibleMarketplace` to one of the keys above:
 

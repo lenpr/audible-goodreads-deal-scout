@@ -1,6 +1,6 @@
 ---
 name: audible-goodreads-deal-scout
-description: Evaluate an Audible daily promotion against Goodreads public score, optional Goodreads CSV shelves, optional freeform reading notes, and optional delivery rules. Use for first-run setup, deal checks, and scheduled sends.
+description: Evaluate an Audible daily promotion against Goodreads public score, optional Goodreads CSV shelves, optional freeform reading notes, optional delivery rules, and manual Want-to-Read discount scans. Use for first-run setup, deal checks, scheduled sends, and on-demand Goodreads backlog audits.
 license: MIT
 metadata: {"openclaw":{"emoji":"🎧","skillKey":"audible-goodreads-deal-scout","homepage":"https://github.com/lenpr/audible-goodreads-deal-scout","category":"media","requires":{"anyBins":["python3","python"]}}}
 ---
@@ -10,6 +10,7 @@ metadata: {"openclaw":{"emoji":"🎧","skillKey":"audible-goodreads-deal-scout",
 Use this skill when the user wants to:
 - set up a reusable Audible deal workflow
 - check the current Audible daily promotion
+- scan Goodreads Want-to-Read books for visible Audible US discounts
 - personalize the result with a Goodreads CSV and/or freeform notes
 - finalize and optionally deliver the result into a configured channel
 
@@ -89,6 +90,36 @@ sh "{baseDir}/scripts/audible-goodreads-deal-scout.sh" setup \
 ```
 
 Use interactive `setup` only when the user explicitly wants prompt-by-prompt CLI onboarding. Otherwise prefer the non-interactive command with concrete flags.
+
+## Want-to-Read discount scan
+
+Use this only when the user asks to scan Goodreads Want-to-Read books for Audible discounts. This is a manual audit command, not a cron or delivery workflow.
+
+Requirements:
+- The configured Goodreads CSV must exist.
+- V1 supports Audible US only.
+- Do not create cron jobs or send delivery messages for this command.
+- Do not perform extra model web searches; the Python command handles Audible lookup and report generation.
+
+Run:
+
+```bash
+sh "{baseDir}/scripts/audible-goodreads-deal-scout.sh" scan-want-to-read \
+  --config-path "<config-path>" \
+  [--limit 40] \
+  [--offset 0] \
+  [--scan-order newest] \
+  [--output-json "<json-path>"] \
+  [--output-md "<markdown-path>"]
+```
+
+Default behavior:
+- Print compact Markdown to stdout.
+- Show visible numeric discounts first.
+- Suppress long non-deal lists unless `--include-non-deals` is requested.
+- Use `--offset` and `--limit` for large Goodreads backlogs.
+
+Important caveat: Audible often hides cash prices behind credit or membership UI. Treat `price_hidden`, `price_unknown`, and `needs_review` as honest uncertainty, not as failures.
 
 ## Ready flow
 
