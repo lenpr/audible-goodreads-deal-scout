@@ -56,10 +56,10 @@ from .rendering import (
     render_final_message,
 )
 from .runtime_contract import (
+    attach_runtime_contract_artifacts,
     build_runtime_input,
     build_runtime_prompt,
     runtime_output_schema,
-    write_runtime_contract_artifacts,
 )
 from .settings import (
     SUPPORTED_MARKETPLACES,
@@ -860,12 +860,7 @@ def prepare_run(
         },
         "message": "Preparation complete. The skill runtime can now resolve Goodreads public score and write the final recommendation.",
     }
-    runtime_artifacts = write_runtime_contract_artifacts(artifact_dir, result)
-    result["artifacts"].update(runtime_artifacts)
-    prepare_result_path = artifact_dir / "prepare-result.json"
-    result["artifacts"]["prepareResultPath"] = str(prepare_result_path)
-    write_json_atomic(prepare_result_path, result)
-    return result
+    return attach_runtime_contract_artifacts(artifact_dir, result)
 
 
 def mark_emitted(state_file: Path, deal_key: str, *, stale_warning_date: str | None = None) -> dict[str, Any]:

@@ -339,6 +339,9 @@ class AudibleCatalogClient:
         self.fetcher = fetcher or fetch_catalog_text_with_final_url
         self.authenticated_price_lookup = authenticated_price_lookup
         self.live_requests = 0
+        self.cache_hits = 0
+        self.cache_writes = 0
+        self.cached_failures = 0
         self.live_block_failures = 0
         self.consecutive_block_failures = 0
         self.ordinary_failures = 0
@@ -366,6 +369,9 @@ class AudibleCatalogClient:
         if utc_now() - fetched_at > timedelta(seconds=effective_ttl):
             return None
         payload["cacheHit"] = True
+        self.cache_hits += 1
+        if not payload.get("ok", True):
+            self.cached_failures += 1
         return payload
 
     def _write_cache(self, cache_type: str, key: str, payload: dict[str, Any]) -> None:
@@ -373,6 +379,17 @@ class AudibleCatalogClient:
             return
         path = self._cache_path(cache_type, key)
         write_json_atomic(path, {"parserVersion": PARSER_VERSION, "fetchedAt": utc_now().isoformat(), **payload})
+        self.cache_writes += 1
+
+    def cache_summary(self) -> dict[str, Any]:
+        return {
+            "enabled": not self.no_cache,
+            "refresh": self.refresh_cache,
+            "offlineFixtures": bool(self.offline_fixtures),
+            "hits": self.cache_hits,
+            "writes": self.cache_writes,
+            "cachedFailures": self.cached_failures,
+        }
 
     def _manifest(self) -> dict[str, Any]:
         if not self.offline_fixtures:

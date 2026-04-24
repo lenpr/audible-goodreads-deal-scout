@@ -24,6 +24,35 @@ def normalize_space(value: str) -> str:
     return re.sub(r"\s+", " ", value or "").strip()
 
 
+def redact_sensitive_text(value: Any) -> str:
+    text = str(value)
+    text = re.sub(
+        r"(?i)(access[_-]?token|refresh[_-]?token|code[_-]?verifier|authorization[_-]?code)([\"'\s:=]+)([^\"'\s,&}]+)",
+        r"\1\2[redacted]",
+        text,
+    )
+    text = re.sub(r"(?i)(Bearer\s+)[A-Za-z0-9._~+/=-]+", r"\1[redacted]", text)
+    text = re.sub(r"(?i)(openid\.oa2\.authorization_code=)[^&\s]+", r"\1[redacted]", text)
+    return text
+
+
+def redact_sensitive_payload(payload: Any) -> Any:
+    if isinstance(payload, dict):
+        redacted: dict[str, Any] = {}
+        for key, value in payload.items():
+            normalized_key_name = re.sub(r"[^a-z0-9]", "", str(key).casefold())
+            if normalized_key_name in {"accesstoken", "refreshtoken", "codeverifier", "authorizationcode"}:
+                redacted[key] = "[redacted]"
+            else:
+                redacted[key] = redact_sensitive_payload(value)
+        return redacted
+    if isinstance(payload, list):
+        return [redact_sensitive_payload(item) for item in payload]
+    if isinstance(payload, str):
+        return redact_sensitive_text(payload)
+    return payload
+
+
 def strip_html(value: str) -> str:
     text = html.unescape(value or "")
     text = re.sub(r"<br\s*/?>", ". ", text, flags=re.I)

@@ -5,8 +5,12 @@
 - Add stdlib-only headless Audible external-login auth helpers for optional authenticated price lookup
 - Add authenticated Audible catalog product pricing lookup for matched Want-to-Read scan results
 - Add `--audible-auth-path` to `scan-want-to-read` and helper commands for auth start, finish, and one-ASIN price testing
+- Add `doctor` and `audible-auth-status` commands for local readiness, auth expiry, and file-permission checks
+- Add structured CLI error payloads with token redaction for command failures
 - Ignore Audible credit prices when classifying authenticated cash discounts
+- Improve Want-to-Read Markdown reports with authenticated-pricing state, cache stats, and next-batch hints
 - Clarify external-browser auth instructions and authenticated request budgeting
+- Move prepare-result artifact writing behind the runtime contract module boundary
 - Keep auth files out of published bundles and document that the auth file is sensitive local state
 
 ## 0.1.4

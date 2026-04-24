@@ -140,3 +140,12 @@ def write_runtime_contract_artifacts(artifact_dir: Path, prep_result: dict[str, 
         "runtimePromptPath": str(runtime_prompt_path),
         "runtimeOutputSchemaPath": str(runtime_schema_path),
     }
+
+
+def attach_runtime_contract_artifacts(artifact_dir: Path, prep_result: dict[str, Any]) -> dict[str, Any]:
+    runtime_artifacts = write_runtime_contract_artifacts(artifact_dir, prep_result)
+    prep_result.setdefault("artifacts", {}).update(runtime_artifacts)
+    prepare_result_path = artifact_dir / "prepare-result.json"
+    prep_result["artifacts"]["prepareResultPath"] = str(prepare_result_path)
+    write_json_atomic(prepare_result_path, prep_result)
+    return prep_result

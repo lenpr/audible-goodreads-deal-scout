@@ -100,6 +100,7 @@ Requirements:
 - V1 supports Audible US only.
 - Do not create cron jobs or send delivery messages for this command.
 - Do not perform extra model web searches; the Python command handles Audible lookup and report generation.
+- If setup or runtime state is unclear, run `doctor` before retrying.
 
 Run:
 
@@ -129,6 +130,7 @@ Optional authenticated pricing:
 - Treat the auth file as sensitive and never paste its token contents into chat.
 - Authenticated scans usually spend one search request plus one authenticated price request for each matched title; set `--max-requests` accordingly.
 - Treat cash pricing fields as the source of truth and do not classify Audible credit prices, including `credit_price`, as cash discounts.
+- Use `audible-auth-status` to check readiness, expiry, and file permissions without exposing tokens.
 
 ```bash
 sh "{baseDir}/scripts/audible-goodreads-deal-scout.sh" audible-auth-start \
@@ -138,6 +140,16 @@ sh "{baseDir}/scripts/audible-goodreads-deal-scout.sh" audible-auth-start \
 sh "{baseDir}/scripts/audible-goodreads-deal-scout.sh" audible-auth-finish \
   --auth-path "<workspace>/.audible-goodreads-deal-scout/audible-auth.json" \
   --redirect-url "<final-amazon-redirect-url>"
+```
+
+Troubleshooting:
+
+```bash
+sh "{baseDir}/scripts/audible-goodreads-deal-scout.sh" doctor \
+  --config-path "<config-path>"
+
+sh "{baseDir}/scripts/audible-goodreads-deal-scout.sh" audible-auth-status \
+  --auth-path "<workspace>/.audible-goodreads-deal-scout/audible-auth.json"
 ```
 
 ## Ready flow

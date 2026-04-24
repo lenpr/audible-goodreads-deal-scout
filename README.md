@@ -247,6 +247,8 @@ sh ./scripts/audible-goodreads-deal-scout.sh scan-want-to-read \
 
 The scan is deliberately conservative. If Audible hides cash pricing behind credits, membership language, or extra buying-choice UI, the result is marked as hidden or unknown instead of guessing. If a title or author match is ambiguous, it is marked for review instead of being treated as a deal.
 
+The Markdown report shows whether authenticated pricing was enabled, live request usage, cache hits/writes, and a suggested next `--offset` command when more selected Want-to-Read books remain.
+
 ### Optional authenticated Audible price lookup
 
 Anonymous Audible pages often hide cash prices. If you want the Want-to-Read scan to check member-visible pricing on a headless OpenClaw machine, you can create a local Audible auth file through an external-browser flow.
@@ -279,6 +281,8 @@ sh ./scripts/audible-goodreads-deal-scout.sh scan-want-to-read \
   --max-requests 90
 ```
 
+You can also save the auth path in `config.json` as `audibleAuthPath`, or set it during scripted setup with `--audible-auth-path`.
+
 Authenticated scans usually spend one search request plus one authenticated price request for each matched Audible title. Use a higher `--max-requests` value than you would for anonymous scans. The authenticated price parser treats cash prices as the source of truth and ignores Audible credit prices such as `credit_price`.
 
 You can test one known Audible ASIN first:
@@ -290,6 +294,21 @@ sh ./scripts/audible-goodreads-deal-scout.sh audible-auth-test-price \
 ```
 
 The test response should include `pricingStatus`, `currentPrice`, `listPrice`, and `discountPercent` when Audible returns visible member cash pricing for that ASIN.
+
+Check auth readiness and file permissions without printing tokens:
+
+```bash
+sh ./scripts/audible-goodreads-deal-scout.sh audible-auth-status \
+  --auth-path .audible-goodreads-deal-scout/audible-auth.json
+```
+
+If the status reports broad file permissions on a local POSIX host, tighten them with:
+
+```bash
+sh ./scripts/audible-goodreads-deal-scout.sh audible-auth-status \
+  --auth-path .audible-goodreads-deal-scout/audible-auth.json \
+  --fix-permissions
+```
 
 The auth file is sensitive. Keep it under `.audible-goodreads-deal-scout/` in your OpenClaw workspace, do not commit it, and remove it if you no longer want the skill to have authenticated Audible API access.
 
@@ -453,6 +472,7 @@ sh ./scripts/audible-goodreads-deal-scout.sh setup \
   --non-interactive \
   --config-path .audible-goodreads-deal-scout/config.json \
   --audible-marketplace us \
+  --audible-auth-path .audible-goodreads-deal-scout/audible-auth.json \
   --threshold 3.8 \
   --goodreads-csv "/absolute/path/to/goodreads_library_export.csv" \
   --notes-file "/absolute/path/to/preferences.md" \
@@ -524,9 +544,12 @@ Three issues cause most confusing runs:
 Useful checks:
 
 ```bash
+sh ./scripts/audible-goodreads-deal-scout.sh doctor --config-path .audible-goodreads-deal-scout/config.json
 sh ./scripts/audible-goodreads-deal-scout.sh show-csv-headers "/absolute/path/to/goodreads_library_export.csv"
 sh ./scripts/audible-goodreads-deal-scout.sh publish-audit --version 0.1.5 --tags latest
 ```
+
+`doctor` checks the configured config, CSV, notes, auth file, cache directory, delivery settings, cron settings, local OpenClaw binary, and bundled shell wrapper. Add `--check-cron` when you want it to query live OpenClaw cron jobs.
 
 If your OpenClaw install strips executable bits from bundled scripts, run the wrapper through `sh` exactly as shown above and in `SKILL.md`.
 - Scheduled runs cannot stop for interactive exec approval. If your OpenClaw host keeps `exec` in `allowlist` mode, allowlist the launcher your host expects for `sh .../scripts/audible-goodreads-deal-scout.sh` before enabling daily automation, for example `/bin/sh` when that is the shell your host uses.
@@ -552,6 +575,7 @@ sh ./scripts/audible-goodreads-deal-scout.sh setup \
 Useful helper commands:
 
 ```bash
+sh ./scripts/audible-goodreads-deal-scout.sh doctor --config-path .audible-goodreads-deal-scout/config.json
 sh ./scripts/audible-goodreads-deal-scout.sh show-csv-headers "/absolute/path/to/goodreads_library_export.csv"
 sh ./scripts/audible-goodreads-deal-scout.sh measure-context --goodreads-csv "/absolute/path/to/goodreads_library_export.csv" --output /tmp/fit-context.json
 sh ./scripts/audible-goodreads-deal-scout.sh publish-audit --version 0.1.5
@@ -574,7 +598,10 @@ sh ./scripts/audible-goodreads-deal-scout.sh run-and-deliver \
 - `audible_goodreads_deal_scout/core.py`: prep/orchestration logic
 - `audible_goodreads_deal_scout/audible_auth.py`: optional headless Audible auth and API price lookup helpers
 - `audible_goodreads_deal_scout/audible_catalog.py`: Audible catalog search and conservative price parsing
+- `audible_goodreads_deal_scout/cli_errors.py`: structured CLI error payload helpers
+- `audible_goodreads_deal_scout/diagnostics.py`: local doctor/status checks
 - `audible_goodreads_deal_scout/want_to_read_scan.py`: Goodreads Want-to-Read scan orchestration and report rendering
+- `audible_goodreads_deal_scout/runtime_contract.py`: runtime input, prompt, schema, and prepare-result artifact writing
 - `audible_goodreads_deal_scout/rendering.py`: card rendering and delivery planning
 - `audible_goodreads_deal_scout/delivery.py`: config, cron, and delivery helpers
 - `audible_goodreads_deal_scout/public_cli.py`: setup and CLI entrypoint

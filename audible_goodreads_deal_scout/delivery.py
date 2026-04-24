@@ -172,6 +172,7 @@ def setup_configuration(
         freshnessDays=int(options.get("freshnessDays") or DEFAULT_FRESHNESS_DAYS),
         csvColumns=options.get("csvColumns") or {},
         audibleDealUrl=options.get("audibleDealUrl") or None,
+        audibleAuthPath=options.get("audibleAuthPath") or None,
         dailyCron=cron_expr if daily_enabled else None,
         deliveryChannel=delivery_channel or None,
         deliveryTarget=delivery_target or None,

@@ -14,7 +14,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from .shared import normalize_space, write_json_atomic
+from .shared import normalize_space, redact_sensitive_payload, redact_sensitive_text, write_json_atomic
 
 
 AUDIBLE_AUTH_SCHEMA_VERSION = 1
@@ -53,7 +53,7 @@ def _load_json(path: Path) -> dict[str, Any]:
     except FileNotFoundError as exc:
         raise AudibleAuthError(f"Audible auth file not found at {path}.") from exc
     except Exception as exc:
-        raise AudibleAuthError(f"Could not read Audible auth file at {path}: {exc}") from exc
+        raise AudibleAuthError(f"Could not read Audible auth file at {path}: {redact_sensitive_text(exc)}") from exc
     if not isinstance(payload, dict):
         raise AudibleAuthError(f"Audible auth file at {path} must contain a JSON object.")
     return payload
@@ -65,13 +65,13 @@ def _urlopen_json(request: urllib.request.Request, *, timeout: int = 30) -> dict
             raw = response.read().decode("utf-8", "ignore")
     except urllib.error.HTTPError as exc:
         body = exc.read().decode("utf-8", "ignore")
-        raise AudibleAuthError(f"Audible API HTTP {exc.code}: {body or exc.reason}") from exc
+        raise AudibleAuthError(f"Audible API HTTP {exc.code}: {redact_sensitive_text(body or exc.reason)}") from exc
     except urllib.error.URLError as exc:
-        raise AudibleAuthError(f"Audible API request failed: {exc}") from exc
+        raise AudibleAuthError(f"Audible API request failed: {redact_sensitive_text(exc)}") from exc
     try:
         payload = json.loads(raw)
     except json.JSONDecodeError as exc:
-        raise AudibleAuthError(f"Audible API returned non-JSON response: {raw[:200]}") from exc
+        raise AudibleAuthError(f"Audible API returned non-JSON response: {redact_sensitive_text(raw[:200])}") from exc
     if not isinstance(payload, dict):
         raise AudibleAuthError("Audible API returned an unexpected JSON payload.")
     return payload
@@ -227,7 +227,7 @@ def register_device(*, authorization_code: str, code_verifier: str, domain: str,
         tokens = success["tokens"]
         bearer = tokens["bearer"]
     except Exception as exc:
-        raise AudibleAuthError(f"Audible registration returned an unexpected payload: {payload}") from exc
+        raise AudibleAuthError(f"Audible registration returned an unexpected payload: {redact_sensitive_payload(payload)}") from exc
     expires = datetime.now(UTC) + timedelta(seconds=int(bearer["expires_in"]))
     return {
         "accessToken": bearer["access_token"],
@@ -271,6 +271,104 @@ def finish_external_auth(auth_path: Path, *, redirect_url: str) -> dict[str, Any
     }
 
 
+def auth_file_status(auth_path: Path, *, fix_permissions: bool = False) -> dict[str, Any]:
+    path = auth_path.expanduser()
+    warnings: list[str] = []
+    errors: list[str] = []
+    exists = path.exists()
+    permission_mode: str | None = None
+    permission_secure: bool | None = None
+    if exists:
+        try:
+            mode = path.stat().st_mode & 0o777
+            permission_mode = oct(mode)
+            permission_secure = (mode & 0o077) == 0
+            if not permission_secure:
+                if fix_permissions:
+                    os.chmod(path, 0o600)
+                    permission_mode = "0o600"
+                    permission_secure = True
+                    warnings.append("Auth file permissions were tightened to 0600.")
+                else:
+                    warnings.append("Auth file is readable by group or others; run audible-auth-status --fix-permissions.")
+        except OSError as exc:
+            warnings.append(f"Could not inspect auth file permissions: {redact_sensitive_text(exc)}")
+    if not exists:
+        return {
+            "ok": False,
+            "schemaVersion": AUDIBLE_AUTH_SCHEMA_VERSION,
+            "status": "missing",
+            "authPath": str(path),
+            "exists": False,
+            "ready": False,
+            "expired": None,
+            "secondsRemaining": None,
+            "permissionMode": None,
+            "permissionSecure": None,
+            "warnings": warnings,
+            "errors": [f"Audible auth file not found at {path}."],
+        }
+    try:
+        payload = _load_json(path)
+    except AudibleAuthError as exc:
+        return {
+            "ok": False,
+            "schemaVersion": AUDIBLE_AUTH_SCHEMA_VERSION,
+            "status": "unreadable",
+            "authPath": str(path),
+            "exists": True,
+            "ready": False,
+            "expired": None,
+            "secondsRemaining": None,
+            "permissionMode": permission_mode,
+            "permissionSecure": permission_secure,
+            "warnings": warnings,
+            "errors": [str(exc)],
+        }
+    status = normalize_space(str(payload.get("status") or "unknown")) or "unknown"
+    expires_raw = payload.get("expires")
+    expires: float | None = None
+    seconds_remaining: int | None = None
+    expired: bool | None = None
+    if expires_raw not in (None, ""):
+        try:
+            expires = float(expires_raw)
+            seconds_remaining = int(expires - time.time())
+            expired = seconds_remaining <= 0
+            if expired:
+                warnings.append("Audible access token is expired; refresh will be attempted on the next authenticated request.")
+        except Exception:
+            warnings.append("Auth file contains an unreadable expires value.")
+    ready = status == "ready" and bool(payload.get("refreshToken"))
+    if status == "pending_external_login":
+        warnings.append("Auth flow is pending; finish with audible-auth-finish.")
+    elif status != "ready":
+        errors.append(f"Auth file status is {status!r}, not 'ready'.")
+    if status == "ready" and not payload.get("refreshToken"):
+        errors.append("Auth file is missing refreshToken.")
+    if permission_secure is False:
+        errors.append("Auth file permissions are too broad.")
+    return {
+        "ok": not errors,
+        "schemaVersion": AUDIBLE_AUTH_SCHEMA_VERSION,
+        "status": status,
+        "authPath": str(path),
+        "exists": True,
+        "ready": ready,
+        "marketplace": payload.get("marketplace"),
+        "domain": payload.get("domain"),
+        "createdAt": payload.get("createdAt"),
+        "updatedAt": payload.get("updatedAt"),
+        "expires": expires,
+        "expired": expired,
+        "secondsRemaining": seconds_remaining,
+        "permissionMode": permission_mode,
+        "permissionSecure": permission_secure,
+        "warnings": warnings,
+        "errors": errors,
+    }
+
+
 def load_ready_auth(auth_path: Path) -> dict[str, Any]:
     payload = _load_json(auth_path.expanduser())
     if payload.get("status") != "ready":
@@ -302,7 +400,7 @@ def refresh_access_token(auth_path: Path, *, force: bool = False) -> dict[str, A
         payload["expires"] = (datetime.now(UTC) + timedelta(seconds=int(response["expires_in"]))).timestamp()
         payload["updatedAt"] = _now_iso()
     except Exception as exc:
-        raise AudibleAuthError(f"Audible token refresh returned an unexpected payload: {response}") from exc
+        raise AudibleAuthError(f"Audible token refresh returned an unexpected payload: {redact_sensitive_payload(response)}") from exc
     _secure_write_json(path, payload)
     return payload
 

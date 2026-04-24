@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import io
 import json
 import os
 import subprocess
@@ -15,6 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from audible_goodreads_deal_scout import core, public_cli  # noqa: E402
 from audible_goodreads_deal_scout import audible_auth  # noqa: E402
 from audible_goodreads_deal_scout import audible_catalog  # noqa: E402
+from audible_goodreads_deal_scout import diagnostics  # noqa: E402
 from audible_goodreads_deal_scout import delivery as delivery_mod  # noqa: E402
 from audible_goodreads_deal_scout import repo_audit  # noqa: E402
 from audible_goodreads_deal_scout import rendering  # noqa: E402
@@ -1235,6 +1237,42 @@ class WantToReadScanTests(unittest.TestCase):
         self.assertNotIn("Hidden Book", markdown)
         self.assertIn("Summary:", markdown)
 
+    def test_want_to_read_markdown_includes_next_batch_hint(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            csv_path = tmp / "goodreads.csv"
+            write_rows(
+                csv_path,
+                [
+                    scan_row("1", "Deal Book", "Jane Story", "2026/04/05"),
+                    scan_row("2", "Later Book", "Jane Story", "2026/04/04"),
+                ],
+            )
+            config_path = tmp / "config.json"
+            config_path.write_text(json.dumps({"audibleMarketplace": "us", "goodreadsCsvPath": str(csv_path)}), encoding="utf-8")
+            fixtures = tmp / "fixtures"
+            write_want_to_read_fixtures(
+                fixtures,
+                search={
+                    "Deal Book Jane Story": f"<ol>{audible_search_card('Deal Book', 'Jane Story', 'B000000001')}</ol>",
+                    "Later Book Jane Story": f"<ol>{audible_search_card('Later Book', 'Jane Story', 'B000000002')}</ol>",
+                },
+            )
+            report, markdown, rc = want_to_read_scan.scan_want_to_read(
+                {
+                    "configPath": str(config_path),
+                    "offlineFixtures": str(fixtures),
+                    "requestDelay": 0,
+                    "maxRequests": 5,
+                    "limit": 1,
+                }
+            )
+        self.assertEqual(rc, 0)
+        self.assertEqual(report["counts"]["selectedRows"], 1)
+        self.assertIn("Next batch:", markdown)
+        self.assertIn("--offset 1 --limit 1", markdown)
+        self.assertIn("anonymous Audible search/card pricing only", markdown)
+
     def test_search_card_without_author_does_not_fetch_product_for_identity_only(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp = Path(tmp_dir)
@@ -1329,12 +1367,102 @@ class WantToReadScanTests(unittest.TestCase):
             with mock.patch.object(audible_auth, "_post_json", return_value=register_payload) as post_json:
                 finished = audible_auth.finish_external_auth(auth_path, redirect_url=redirect_url)
             saved = json.loads(auth_path.read_text(encoding="utf-8"))
+            if os.name == "posix":
+                saved_mode = auth_path.stat().st_mode & 0o777
         self.assertTrue(started["loginUrl"].startswith("https://www.amazon.com/ap/signin?"))
         self.assertEqual(finished["marketplace"], "us")
         self.assertEqual(saved["status"], "ready")
         self.assertEqual(saved["accessToken"], "access-1")
         self.assertEqual(saved["refreshToken"], "refresh-1")
         self.assertIn("/auth/register", post_json.call_args.args[0])
+        if os.name == "posix":
+            self.assertEqual(saved_mode, 0o600)
+
+    def test_audible_auth_status_reports_expiry_and_fixes_permissions(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            auth_path = Path(tmp_dir) / "audible-auth.json"
+            auth_path.write_text(
+                json.dumps(
+                    {
+                        "schemaVersion": 1,
+                        "status": "ready",
+                        "marketplace": "us",
+                        "domain": "com",
+                        "refreshToken": "refresh-secret",
+                        "accessToken": "access-secret",
+                        "expires": 4_102_444_800,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            if os.name == "posix":
+                os.chmod(auth_path, 0o644)
+                insecure = audible_auth.auth_file_status(auth_path)
+                self.assertFalse(insecure["ok"])
+                self.assertFalse(insecure["permissionSecure"])
+                fixed = audible_auth.auth_file_status(auth_path, fix_permissions=True)
+                self.assertTrue(fixed["ok"])
+                self.assertEqual(auth_path.stat().st_mode & 0o777, 0o600)
+            else:
+                fixed = audible_auth.auth_file_status(auth_path)
+        self.assertTrue(fixed["ready"])
+        self.assertNotIn("access-secret", json.dumps(fixed))
+
+    def test_doctor_report_checks_config_inputs_auth_and_delivery(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            csv_path = tmp / "goodreads.csv"
+            write_rows(csv_path, [scan_row("1", "Deal Book", "Jane Story", "2026/04/05")])
+            notes_path = tmp / "notes.md"
+            notes_path.write_text("Likes concise sci-fi.\n", encoding="utf-8")
+            auth_path = tmp / "audible-auth.json"
+            auth_path.write_text(
+                json.dumps(
+                    {
+                        "schemaVersion": 1,
+                        "status": "ready",
+                        "marketplace": "us",
+                        "domain": "com",
+                        "refreshToken": "refresh-secret",
+                        "expires": 4_102_444_800,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            if os.name == "posix":
+                os.chmod(auth_path, 0o600)
+            config_path = tmp / "config.json"
+            config_path.write_text(
+                json.dumps(
+                    {
+                        "audibleMarketplace": "us",
+                        "goodreadsCsvPath": str(csv_path),
+                        "preferencesPath": str(notes_path),
+                        "audibleAuthPath": str(auth_path),
+                        "deliveryChannel": "telegram",
+                        "deliveryTarget": "@books",
+                    }
+                ),
+                encoding="utf-8",
+            )
+            report = diagnostics.doctor_report(config_path=config_path, openclaw_bin=sys.executable)
+        self.assertTrue(report["ok"])
+        self.assertEqual(report["checks"]["csv"]["status"], "ok")
+        self.assertTrue(report["checks"]["auth"]["ready"])
+        self.assertEqual(report["checks"]["delivery"]["status"], "configured")
+
+    def test_cli_errors_are_structured_and_redacted(self) -> None:
+        stdout = io.StringIO()
+        with mock.patch.object(public_cli, "command_show_csv_headers", side_effect=RuntimeError("Bearer abc123 access_token: secret-token")):
+            with mock.patch("sys.stdout", stdout):
+                rc = public_cli.main(["show-csv-headers", "missing.csv"])
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(rc, 1)
+        self.assertFalse(payload["ok"])
+        self.assertEqual(payload["status"], "error")
+        self.assertEqual(payload["command"], "show-csv-headers")
+        self.assertNotIn("abc123", stdout.getvalue())
+        self.assertNotIn("secret-token", stdout.getvalue())
 
     def test_parse_authenticated_pricing_detects_discount(self) -> None:
         pricing = audible_auth.parse_authenticated_pricing(
@@ -1392,7 +1520,7 @@ class WantToReadScanTests(unittest.TestCase):
                 }
             }
             with mock.patch.object(audible_auth, "_get_json", return_value=pricing_payload):
-                report, _markdown, rc = want_to_read_scan.scan_want_to_read(
+                report, markdown, rc = want_to_read_scan.scan_want_to_read(
                     {
                         "configPath": str(config_path),
                         "title": "Deal Book",
@@ -1408,6 +1536,8 @@ class WantToReadScanTests(unittest.TestCase):
         self.assertTrue(report["metadata"]["authenticatedPriceLookup"])
         self.assertEqual(report["results"][0]["status"], "discounted")
         self.assertEqual(report["results"][0]["pricing"]["discountPercent"], 75)
+        self.assertIn("authenticated Audible cash pricing enabled", markdown)
+        self.assertIn("Cache:", markdown)
 
     def test_budget_counts_product_fetch_separately_and_renders_partial(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

@@ -34,6 +34,7 @@ def _now_iso() -> str:
 def _error_report(reason_code: str, message: str, *, config_path: Path | None = None) -> dict[str, Any]:
     return {
         "schemaVersion": 1,
+        "ok": False,
         "status": "error",
         "reasonCode": reason_code,
         "generatedAt": _now_iso(),
@@ -45,7 +46,8 @@ def _error_report(reason_code: str, message: str, *, config_path: Path | None = 
         "warnings": [message],
         "results": [],
         "metadata": {"configPath": str(config_path) if config_path else None},
-        "error": message,
+        "message": message,
+        "error": {"type": "InputError", "message": message},
         "exitCode": 1,
     }
 
@@ -200,6 +202,10 @@ def _candidate_note_line(result: dict[str, Any]) -> str:
 def render_markdown(report: dict[str, Any], *, include_non_deals: bool = False, verbose: bool = False) -> str:
     counts = report.get("counts") or {}
     budget = report.get("requestBudget") or {}
+    cache = report.get("cache") or {}
+    metadata = report.get("metadata") or {}
+    selection = report.get("selection") or {}
+    authenticated = bool(metadata.get("authenticatedPriceLookup"))
     lines = [
         "# Discounted Want-to-Read Titles",
         "",
@@ -207,6 +213,11 @@ def render_markdown(report: dict[str, Any], *, include_non_deals: bool = False, 
             f"Scanned {counts.get('scannedRows', 0)} of {counts.get('selectedRows', 0)} selected "
             f"Want-to-Read books. Live requests: {budget.get('used', 0)}/{budget.get('max', 0)}."
         ),
+        (
+            "Pricing: "
+            + ("authenticated Audible cash pricing enabled." if authenticated else "anonymous Audible search/card pricing only.")
+        ),
+        f"Cache: {cache.get('hits', 0)} hits, {cache.get('writes', 0)} writes.",
         (
             "Summary: "
             f"{counts.get('discounted', 0)} discounted, "
@@ -219,6 +230,29 @@ def render_markdown(report: dict[str, Any], *, include_non_deals: bool = False, 
         ),
         "",
     ]
+    next_offset = int(selection.get("offset") or 0) + int(counts.get("scannedRows") or 0)
+    total_to_read = int(counts.get("totalWantToRead") or 0)
+    limit = selection.get("limit")
+    if limit is not None and next_offset < total_to_read:
+        next_parts = [
+            "scan-want-to-read",
+            f"--scan-order {selection.get('order') or DEFAULT_SCAN_ORDER}",
+            f"--offset {next_offset}",
+            f"--limit {limit}",
+            f"--max-requests {budget.get('max', 0)}",
+        ]
+        if authenticated:
+            next_parts.append("--audible-auth-path <auth-path>")
+        lines.extend(
+            [
+                "Next batch:",
+                "",
+                "```bash",
+                " ".join(next_parts),
+                "```",
+                "",
+            ]
+        )
     discounted = [result for result in report.get("results") or [] if result.get("status") == "discounted"]
     if not discounted:
         lines.append("No visible numeric Audible discounts were found in this scan.")
@@ -416,6 +450,7 @@ def scan_want_to_read(
             "used": client.live_requests,
             "remaining": max(0, max_requests - client.live_requests),
         },
+        "cache": client.cache_summary(),
         "counts": counts,
         "warnings": warnings,
         "results": ranked_results,

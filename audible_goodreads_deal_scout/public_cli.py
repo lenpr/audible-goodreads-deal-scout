@@ -6,7 +6,9 @@ import sys
 from pathlib import Path
 
 from . import core
-from .audible_auth import finish_external_auth, start_external_auth, test_authenticated_price
+from .audible_auth import auth_file_status, finish_external_auth, start_external_auth, test_authenticated_price
+from .cli_errors import cli_error_payload
+from .diagnostics import doctor_report
 from .repo_audit import scan_repo_for_leaks
 from .shared import write_json_atomic
 from .want_to_read_scan import report_json, scan_want_to_read
@@ -48,6 +50,7 @@ def build_parser() -> argparse.ArgumentParser:
     setup_parser.add_argument("--state-file")
     setup_parser.add_argument("--preferences-path")
     setup_parser.add_argument("--audible-marketplace")
+    setup_parser.add_argument("--audible-auth-path")
     setup_parser.add_argument("--goodreads-csv")
     setup_parser.add_argument("--notes-file")
     setup_parser.add_argument("--notes-text")
@@ -139,6 +142,22 @@ def build_parser() -> argparse.ArgumentParser:
     auth_test_parser.add_argument("--auth-path", required=True)
     auth_test_parser.add_argument("--asin", required=True)
 
+    auth_status_parser = subparsers.add_parser(
+        "audible-auth-status",
+        help="Inspect saved Audible auth readiness, expiry, and file permissions without printing tokens.",
+    )
+    auth_status_parser.add_argument("--auth-path", required=True)
+    auth_status_parser.add_argument("--fix-permissions", action="store_true")
+
+    doctor_parser = subparsers.add_parser(
+        "doctor",
+        help="Check config, CSV, notes, auth, cache, delivery, cron, and wrapper readiness.",
+    )
+    doctor_parser.add_argument("--config-path")
+    doctor_parser.add_argument("--auth-path")
+    doctor_parser.add_argument("--openclaw-bin", default="openclaw")
+    doctor_parser.add_argument("--check-cron", action="store_true")
+
     mark_parser = subparsers.add_parser("mark-emitted", help="Record a scheduled run's emitted deal key after the skill finishes.")
     mark_parser.add_argument("--state-file", required=True)
     mark_parser.add_argument("--deal-key", required=True)
@@ -227,6 +246,7 @@ def interactive_setup_defaults(args: argparse.Namespace) -> dict[str, object]:
     )
     return {
         "audibleMarketplace": marketplace,
+        "audibleAuthPath": args.audible_auth_path,
         "goodreadsCsvPath": csv_path or None,
         "notesText": notes_text or "",
         "notesFile": notes_file or None,
@@ -255,6 +275,7 @@ def command_setup(args: argparse.Namespace) -> int:
             "stateFile": args.state_file,
             "preferencesPath": args.preferences_path,
             "audibleMarketplace": args.audible_marketplace or "us",
+            "audibleAuthPath": args.audible_auth_path,
             "goodreadsCsvPath": args.goodreads_csv,
             "notesFile": args.notes_file,
             "notesText": args.notes_text or "",
@@ -365,6 +386,23 @@ def command_audible_auth_test_price(args: argparse.Namespace) -> int:
     return 0
 
 
+def command_audible_auth_status(args: argparse.Namespace) -> int:
+    result = auth_file_status(Path(args.auth_path).expanduser(), fix_permissions=args.fix_permissions)
+    print(json.dumps(result, indent=2, sort_keys=True, ensure_ascii=False))
+    return 0 if result.get("ok") else 1
+
+
+def command_doctor(args: argparse.Namespace) -> int:
+    result = doctor_report(
+        config_path=Path(args.config_path).expanduser() if args.config_path else None,
+        auth_path=Path(args.auth_path).expanduser() if args.auth_path else None,
+        openclaw_bin=args.openclaw_bin,
+        check_live_cron=args.check_cron,
+    )
+    print(json.dumps(result, indent=2, sort_keys=True, ensure_ascii=False))
+    return 0 if result.get("ok") else 1
+
+
 def command_mark_emitted(args: argparse.Namespace) -> int:
     result = core.mark_emitted(
         Path(args.state_file).expanduser(),
@@ -389,7 +427,10 @@ def command_publish_audit(args: argparse.Namespace) -> int:
         "audible_goodreads_deal_scout/core.py": skill_dir / "audible_goodreads_deal_scout" / "core.py",
         "audible_goodreads_deal_scout/audible_auth.py": skill_dir / "audible_goodreads_deal_scout" / "audible_auth.py",
         "audible_goodreads_deal_scout/audible_catalog.py": skill_dir / "audible_goodreads_deal_scout" / "audible_catalog.py",
+        "audible_goodreads_deal_scout/cli_errors.py": skill_dir / "audible_goodreads_deal_scout" / "cli_errors.py",
         "audible_goodreads_deal_scout/want_to_read_scan.py": skill_dir / "audible_goodreads_deal_scout" / "want_to_read_scan.py",
+        "audible_goodreads_deal_scout/diagnostics.py": skill_dir / "audible_goodreads_deal_scout" / "diagnostics.py",
+        "audible_goodreads_deal_scout/runtime_contract.py": skill_dir / "audible_goodreads_deal_scout" / "runtime_contract.py",
     }
     skill_text = required_files["SKILL.md"].read_text(encoding="utf-8") if required_files["SKILL.md"].exists() else ""
     publish_ignore_entries = load_ignore_entries(publish_ignore_path)
@@ -545,39 +586,55 @@ def command_run_and_deliver(args: argparse.Namespace) -> int:
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
-    if args.command == "setup":
-        return command_setup(args)
-    if args.command == "prepare":
-        return command_prepare(args)
-    if args.command == "show-csv-headers":
-        return command_show_csv_headers(args)
-    if args.command == "measure-context":
-        return command_measure_context(args)
-    if args.command == "scan-want-to-read":
-        return command_scan_want_to_read(args)
-    if args.command == "audible-auth-start":
-        return command_audible_auth_start(args)
-    if args.command == "audible-auth-finish":
-        return command_audible_auth_finish(args)
-    if args.command == "audible-auth-test-price":
-        return command_audible_auth_test_price(args)
-    if args.command == "mark-emitted":
-        return command_mark_emitted(args)
-    if args.command == "publish-audit":
-        return command_publish_audit(args)
-    if args.command == "finalize":
-        return command_finalize(args)
-    if args.command == "deliver":
-        return command_deliver(args)
-    if args.command == "run-and-deliver":
-        return command_run_and_deliver(args)
+    try:
+        if args.command == "setup":
+            return command_setup(args)
+        if args.command == "prepare":
+            return command_prepare(args)
+        if args.command == "show-csv-headers":
+            return command_show_csv_headers(args)
+        if args.command == "measure-context":
+            return command_measure_context(args)
+        if args.command == "scan-want-to-read":
+            return command_scan_want_to_read(args)
+        if args.command == "audible-auth-start":
+            return command_audible_auth_start(args)
+        if args.command == "audible-auth-finish":
+            return command_audible_auth_finish(args)
+        if args.command == "audible-auth-test-price":
+            return command_audible_auth_test_price(args)
+        if args.command == "audible-auth-status":
+            return command_audible_auth_status(args)
+        if args.command == "doctor":
+            return command_doctor(args)
+        if args.command == "mark-emitted":
+            return command_mark_emitted(args)
+        if args.command == "publish-audit":
+            return command_publish_audit(args)
+        if args.command == "finalize":
+            return command_finalize(args)
+        if args.command == "deliver":
+            return command_deliver(args)
+        if args.command == "run-and-deliver":
+            return command_run_and_deliver(args)
+    except Exception as exc:
+        print(
+            json.dumps(
+                cli_error_payload(
+                    command=str(args.command or ""),
+                    reason_code="cli_command_failed",
+                    message=str(exc),
+                    error_type=type(exc).__name__,
+                ),
+                indent=2,
+                sort_keys=True,
+                ensure_ascii=False,
+            )
+        )
+        return 1
     parser.error(f"Unknown command: {args.command}")
     return 2
 
 
 if __name__ == "__main__":
-    try:
-        raise SystemExit(main())
-    except Exception as exc:
-        print(json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False))
-        raise SystemExit(1)
+    raise SystemExit(main())
