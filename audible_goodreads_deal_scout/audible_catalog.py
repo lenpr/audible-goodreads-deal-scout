@@ -7,11 +7,14 @@ import random
 import re
 import time
 import urllib.parse
+import urllib.request
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Callable
+from urllib.error import HTTPError, URLError
 
-from .audible_source import AudibleBlockedError, AudibleFetchError, fetch_text_with_final_url
+from .audible_source import AudibleBlockedError, AudibleFetchError, decode_response_bytes
+from .constants import AUDIBLE_BLOCK_MARKERS
 from .shared import (
     normalize_author_key,
     normalize_space,
@@ -24,6 +27,10 @@ from .shared import (
 
 PARSER_VERSION = "want-to-read-v1"
 USD_SEARCH_BASE_URL = "https://www.audible.com/search"
+CATALOG_USER_AGENT = (
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
+)
 BLOCK_FAILURE_TTL_SECONDS = 30 * 60
 ORDINARY_FAILURE_TTL_SECONDS = 30 * 60
 PRODUCT_TTL_SECONDS = 6 * 60 * 60
@@ -42,6 +49,32 @@ IGNORED_PRICE_CONTEXT_MARKERS = (
 
 class RequestBudgetExceeded(RuntimeError):
     pass
+
+
+def fetch_catalog_text_with_final_url(url: str) -> tuple[str, str]:
+    request = urllib.request.Request(
+        url,
+        headers={
+            "User-Agent": CATALOG_USER_AGENT,
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Encoding": "gzip, deflate",
+            "Accept-Language": "en-US,en;q=0.9",
+        },
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            raw = response.read()
+            text = decode_response_bytes(raw, str(response.headers.get("Content-Encoding") or ""))
+            lowered = text.lower()
+            if any(marker in lowered for marker in AUDIBLE_BLOCK_MARKERS):
+                raise AudibleBlockedError(f"Audible blocked the request for {url}.")
+            return text, str(response.geturl() or url)
+    except HTTPError as exc:
+        if exc.code in {403, 429}:
+            raise AudibleBlockedError(f"Audible request blocked with HTTP {exc.code}.") from exc
+        raise AudibleFetchError(f"Audible request failed for {url}: {exc}") from exc
+    except URLError as exc:
+        raise AudibleFetchError(f"Audible request failed for {url}: {exc}") from exc
 
 
 def utc_now() -> datetime:
@@ -115,8 +148,16 @@ def strong_title_match(goodreads_title: str, audible_title: str) -> bool:
 def format_warnings(text: str) -> list[str]:
     lowered = text.casefold()
     warnings: list[str] = []
-    for marker in ("abridged", "dramatized", "adaptation", "podcast", "course", "omnibus"):
-        if marker in lowered:
+    patterns = {
+        "abridged": r"\babridged\b",
+        "dramatized": r"\bdramatized\b",
+        "adaptation": r"\badaptation\b",
+        "podcast": r"\bpodcast\b",
+        "course": r"\bcourse\b",
+        "omnibus": r"\bomnibus\b",
+    }
+    for marker, pattern in patterns.items():
+        if re.search(pattern, lowered):
             warnings.append(marker)
     return warnings
 
@@ -206,7 +247,9 @@ def _anchor_title_for_href(block: str, href: str) -> str:
     escaped = re.escape(href)
     match = re.search(rf'<a[^>]+href=["\']{escaped}["\'][^>]*>(.*?)</a>', block, flags=re.I | re.S)
     if match:
-        return normalize_space(strip_html(match.group(1)))
+        anchor_text = normalize_space(strip_html(match.group(1)))
+        if anchor_text:
+            return anchor_text
     title_match = re.search(r"<h[1-4][^>]*>(.*?)</h[1-4]>", block, flags=re.I | re.S)
     return normalize_space(strip_html(title_match.group(1) if title_match else ""))
 
@@ -233,13 +276,15 @@ def parse_search_cards(html_text: str, base_url: str = "https://www.audible.com"
         if url in seen:
             continue
         seen.add(url)
-        li_start = html_text.rfind("<li", 0, match.start())
-        li_end = html_text.find("</li>", match.end())
-        if li_start >= 0 and li_end >= 0:
-            block = html_text[li_start : li_end + len("</li>")]
+        product_marker = html_text.rfind("productListItem", 0, match.start())
+        product_start = html_text.rfind("<li", 0, product_marker) if product_marker >= 0 else -1
+        next_product = re.search(r'<li[^>]+class=["\'][^"\']*productListItem', html_text[match.end() :], flags=re.I | re.S)
+        if product_start >= 0:
+            product_end = match.end() + next_product.start() if next_product else min(len(html_text), match.end() + 15_000)
+            block = html_text[product_start:product_end]
         else:
             start = max(0, match.start() - 2500)
-            end = min(len(html_text), match.end() + 5000)
+            end = min(len(html_text), match.end() + 7500)
             block = html_text[start:end]
         title = _anchor_title_for_href(block, raw_href)
         author = _author_from_block(block)
@@ -291,7 +336,7 @@ class AudibleCatalogClient:
         self.refresh_cache = refresh_cache
         self.no_cache = no_cache
         self.offline_fixtures = offline_fixtures
-        self.fetcher = fetcher or (lambda url: fetch_text_with_final_url(url, retries=0))
+        self.fetcher = fetcher or fetch_catalog_text_with_final_url
         self.live_requests = 0
         self.live_block_failures = 0
         self.consecutive_block_failures = 0

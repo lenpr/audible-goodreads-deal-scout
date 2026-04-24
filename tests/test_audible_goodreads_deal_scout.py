@@ -1273,6 +1273,35 @@ class WantToReadScanTests(unittest.TestCase):
         self.assertEqual(offer["listPrice"], 14.95)
         self.assertEqual(offer["discountPercent"], 67)
 
+    def test_search_parser_reads_live_like_nested_author_block(self) -> None:
+        html = """
+        <ul>
+          <li class="bc-list-item productListItem" id="product-list-item-1984887467" aria-label="The Scout Mindset">
+            <a href="/pd/The-Scout-Mindset-Audiobook/1984887467?qid=1">
+              <img alt="The Scout Mindset Audiobook By Julia Galef cover art" />
+            </a>
+            <div id="product-list-flyout-1984887467">
+              <ul>
+                <li><h2>The Scout Mindset</h2></li>
+                <li>Why Some People See Things Clearly and Others Don't</li>
+                <li>
+                  By:
+                  Julia Galef
+                </li>
+                <li>Unabridged</li>
+              </ul>
+            </div>
+          </li>
+          <li class="bc-list-item productListItem" id="product-list-item-0000000000">
+            <a href="/pd/Other-Audiobook/0000000000">Other</a>
+          </li>
+        </ul>
+        """
+        cards = audible_catalog.parse_search_cards(html)
+        self.assertEqual(cards[0]["title"], "The Scout Mindset")
+        self.assertEqual(cards[0]["author"], "Julia Galef")
+        self.assertNotIn("abridged", cards[0]["warnings"])
+
     def test_budget_counts_product_fetch_separately_and_renders_partial(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp = Path(tmp_dir)
