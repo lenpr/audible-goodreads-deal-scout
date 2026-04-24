@@ -1,18 +1,17 @@
 # Changelog
 
-## 0.1.5
-
-- Add stdlib-only headless Audible external-login auth helpers for optional authenticated price lookup
-- Add authenticated Audible catalog product pricing lookup for matched Want-to-Read scan results
-- Add `--audible-auth-path` to `scan-want-to-read` and helper commands for auth start, finish, and one-ASIN price testing
-- Keep auth files out of published bundles and document that the auth file is sensitive local state
-
 ## 0.1.4
 
 - Add a manual `scan-want-to-read` command for checking Goodreads `to-read` books against visible Audible US numeric discounts
 - Add conservative Audible catalog search, pricing parsing, parsed-result cache, request budgeting, and block-like circuit breaker handling for the new scan
 - Add compact Markdown and structured JSON reports for Want-to-Read discount scans
 - Add offline fixture coverage for scan selection, matching, pricing, request budget behavior, cached block failures, and compact report output
+- Add stdlib-only headless Audible external-login auth helpers for optional authenticated price lookup
+- Add authenticated Audible catalog product pricing lookup for matched Want-to-Read scan results
+- Add `--audible-auth-path` to `scan-want-to-read` and helper commands for auth start, finish, and one-ASIN price testing
+- Ignore Audible credit prices when classifying authenticated cash discounts
+- Clarify external-browser auth instructions and authenticated request budgeting
+- Keep auth files out of published bundles and document that the auth file is sensitive local state
 
 ## 0.1.3
 

@@ -127,6 +127,8 @@ Optional authenticated pricing:
 - Do not ask for the user's Audible or Amazon password.
 - Store the auth file under the workspace storage directory, for example `<workspace>/.audible-goodreads-deal-scout/audible-auth.json`.
 - Treat the auth file as sensitive and never paste its token contents into chat.
+- Authenticated scans usually spend one search request plus one authenticated price request for each matched title; set `--max-requests` accordingly.
+- Treat cash pricing fields as the source of truth and do not classify Audible credit prices, including `credit_price`, as cash discounts.
 
 ```bash
 sh "{baseDir}/scripts/audible-goodreads-deal-scout.sh" audible-auth-start \

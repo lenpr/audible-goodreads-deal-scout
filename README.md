@@ -46,8 +46,8 @@ clawhub login
 clawhub publish . \
   --slug audible-goodreads-deal-scout \
   --name "Audible Goodreads Deal Scout" \
-  --version 0.1.5 \
-  --changelog "Add optional headless authenticated Audible price lookup" \
+  --version 0.1.4 \
+  --changelog "Add Want-to-Read discount scan and optional authenticated Audible price lookup" \
   --tags latest
 ```
 
@@ -275,8 +275,11 @@ Then scan with authenticated price lookup:
 sh ./scripts/audible-goodreads-deal-scout.sh scan-want-to-read \
   --config-path .audible-goodreads-deal-scout/config.json \
   --audible-auth-path .audible-goodreads-deal-scout/audible-auth.json \
-  --limit 40
+  --limit 40 \
+  --max-requests 90
 ```
+
+Authenticated scans usually spend one search request plus one authenticated price request for each matched Audible title. Use a higher `--max-requests` value than you would for anonymous scans. The authenticated price parser treats cash prices as the source of truth and ignores Audible credit prices such as `credit_price`.
 
 You can test one known Audible ASIN first:
 
@@ -285,6 +288,8 @@ sh ./scripts/audible-goodreads-deal-scout.sh audible-auth-test-price \
   --auth-path .audible-goodreads-deal-scout/audible-auth.json \
   --asin B08V8B2CGV
 ```
+
+The test response should include `pricingStatus`, `currentPrice`, `listPrice`, and `discountPercent` when Audible returns visible member cash pricing for that ASIN.
 
 The auth file is sensitive. Keep it under `.audible-goodreads-deal-scout/` in your OpenClaw workspace, do not commit it, and remove it if you no longer want the skill to have authenticated Audible API access.
 
@@ -520,7 +525,7 @@ Useful checks:
 
 ```bash
 sh ./scripts/audible-goodreads-deal-scout.sh show-csv-headers "/absolute/path/to/goodreads_library_export.csv"
-sh ./scripts/audible-goodreads-deal-scout.sh publish-audit --version 0.1.5 --tags latest
+sh ./scripts/audible-goodreads-deal-scout.sh publish-audit --version 0.1.4 --tags latest
 ```
 
 If your OpenClaw install strips executable bits from bundled scripts, run the wrapper through `sh` exactly as shown above and in `SKILL.md`.
@@ -549,7 +554,7 @@ Useful helper commands:
 ```bash
 sh ./scripts/audible-goodreads-deal-scout.sh show-csv-headers "/absolute/path/to/goodreads_library_export.csv"
 sh ./scripts/audible-goodreads-deal-scout.sh measure-context --goodreads-csv "/absolute/path/to/goodreads_library_export.csv" --output /tmp/fit-context.json
-sh ./scripts/audible-goodreads-deal-scout.sh publish-audit --version 0.1.5
+sh ./scripts/audible-goodreads-deal-scout.sh publish-audit --version 0.1.4
 ```
 
 Finalize and deliver in one step:
@@ -582,7 +587,7 @@ sh ./scripts/audible-goodreads-deal-scout.sh run-and-deliver \
 Before publishing, run:
 
 ```bash
-sh ./scripts/audible-goodreads-deal-scout.sh publish-audit --version 0.1.5 --tags latest
+sh ./scripts/audible-goodreads-deal-scout.sh publish-audit --version 0.1.4 --tags latest
 ```
 
 ## Why this is worth publishing
