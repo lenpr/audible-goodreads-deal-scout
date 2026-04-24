@@ -6,6 +6,7 @@ from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any, Callable
 
+from .audible_auth import authenticated_product_pricing
 from .audible_catalog import AudibleCatalogClient, RequestBudgetExceeded, deterministic_shuffle
 from .goodreads_csv import effective_shelf, load_goodreads_csv
 from .settings import default_config_path, default_storage_dir, load_config, validate_marketplace
@@ -322,6 +323,7 @@ def scan_want_to_read(
         max_requests = int(config.get("maxRequests") or 40)
         request_delay = float(config.get("requestDelay") if config.get("requestDelay") is not None else 1.0)
         min_discount_percent = int(config.get("minDiscountPercent") or 10)
+        audible_auth_path = normalize_space(str(config.get("audibleAuthPath") or ""))
         title = normalize_space(str(config.get("title") or ""))
         author = normalize_space(str(config.get("author") or ""))
         if bool(title) != bool(author):
@@ -347,6 +349,13 @@ def scan_want_to_read(
 
     storage_dir = _storage_dir_for(resolved_config_path, config)
     cache_dir = storage_dir / "cache" / "audible"
+    authenticated_price_lookup = None
+    if audible_auth_path:
+        auth_path = Path(audible_auth_path).expanduser()
+
+        def authenticated_price_lookup(product_id: str, threshold: int) -> dict[str, Any]:
+            return authenticated_product_pricing(auth_path, product_id, threshold=threshold)
+
     client = AudibleCatalogClient(
         cache_dir=cache_dir,
         max_requests=max_requests,
@@ -355,6 +364,7 @@ def scan_want_to_read(
         no_cache=bool(config.get("noCache")),
         offline_fixtures=Path(str(config["offlineFixtures"])).expanduser() if config.get("offlineFixtures") else None,
         fetcher=fetcher,
+        authenticated_price_lookup=authenticated_price_lookup,
     )
 
     results: list[dict[str, Any]] = []
@@ -413,6 +423,7 @@ def scan_want_to_read(
             "configPath": str(resolved_config_path),
             "cacheDir": str(cache_dir),
             "parserVersion": "want-to-read-v1",
+            "authenticatedPriceLookup": bool(authenticated_price_lookup),
         },
         "exitCode": exit_code,
     }

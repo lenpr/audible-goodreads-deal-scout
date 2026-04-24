@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.5
+
+- Add stdlib-only headless Audible external-login auth helpers for optional authenticated price lookup
+- Add authenticated Audible catalog product pricing lookup for matched Want-to-Read scan results
+- Add `--audible-auth-path` to `scan-want-to-read` and helper commands for auth start, finish, and one-ASIN price testing
+- Keep auth files out of published bundles and document that the auth file is sensitive local state
+
 ## 0.1.4
 
 - Add a manual `scan-want-to-read` command for checking Goodreads `to-read` books against visible Audible US numeric discounts

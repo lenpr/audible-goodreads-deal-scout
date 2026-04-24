@@ -3,6 +3,7 @@ __pycache__/
 *.pyc
 .DS_Store
 .audible-goodreads-deal-scout/
+audible-auth*.json
 .pytest_cache/
 tests/
 docs/

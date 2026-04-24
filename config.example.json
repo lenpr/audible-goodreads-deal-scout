@@ -1,5 +1,6 @@
 {
   "artifactDir": ".audible-goodreads-deal-scout/artifacts/current",
+  "audibleAuthPath": null,
   "audibleDealUrl": null,
   "audibleMarketplace": "us",
   "csvColumns": {},

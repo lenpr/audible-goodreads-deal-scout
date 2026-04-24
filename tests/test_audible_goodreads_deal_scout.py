@@ -13,6 +13,7 @@ from unittest import mock
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from audible_goodreads_deal_scout import core, public_cli  # noqa: E402
+from audible_goodreads_deal_scout import audible_auth  # noqa: E402
 from audible_goodreads_deal_scout import audible_catalog  # noqa: E402
 from audible_goodreads_deal_scout import delivery as delivery_mod  # noqa: E402
 from audible_goodreads_deal_scout import repo_audit  # noqa: E402
@@ -1301,6 +1302,111 @@ class WantToReadScanTests(unittest.TestCase):
         self.assertEqual(cards[0]["title"], "The Scout Mindset")
         self.assertEqual(cards[0]["author"], "Julia Galef")
         self.assertNotIn("abridged", cards[0]["warnings"])
+
+    def test_audible_auth_start_and_finish_external_flow(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            auth_path = Path(tmp_dir) / "audible-auth.json"
+            started = audible_auth.start_external_auth(auth_path, marketplace="us")
+            pending = json.loads(auth_path.read_text(encoding="utf-8"))
+            redirect_url = "https://www.amazon.com/ap/maplanding?openid.oa2.authorization_code=AUTHCODE"
+            register_payload = {
+                "response": {
+                    "success": {
+                        "tokens": {
+                            "bearer": {
+                                "access_token": "access-1",
+                                "refresh_token": "refresh-1",
+                                "expires_in": "3600",
+                            }
+                        },
+                        "extensions": {
+                            "device_info": {"serial": pending["serial"]},
+                            "customer_info": {"name": "Test User"},
+                        },
+                    }
+                }
+            }
+            with mock.patch.object(audible_auth, "_post_json", return_value=register_payload) as post_json:
+                finished = audible_auth.finish_external_auth(auth_path, redirect_url=redirect_url)
+            saved = json.loads(auth_path.read_text(encoding="utf-8"))
+        self.assertTrue(started["loginUrl"].startswith("https://www.amazon.com/ap/signin?"))
+        self.assertEqual(finished["marketplace"], "us")
+        self.assertEqual(saved["status"], "ready")
+        self.assertEqual(saved["accessToken"], "access-1")
+        self.assertEqual(saved["refreshToken"], "refresh-1")
+        self.assertIn("/auth/register", post_json.call_args.args[0])
+
+    def test_parse_authenticated_pricing_detects_discount(self) -> None:
+        pricing = audible_auth.parse_authenticated_pricing(
+            {
+                "product": {
+                    "asin": "B000000001",
+                    "price": {
+                        "currency_code": "USD",
+                        "list_price": {"amount": 14.95},
+                        "member_price": {"amount": 4.99},
+                    },
+                }
+            }
+        )
+        self.assertEqual(pricing["pricingStatus"], "discounted")
+        self.assertEqual(pricing["currentPrice"], 4.99)
+        self.assertEqual(pricing["listPrice"], 14.95)
+        self.assertEqual(pricing["discountPercent"], 67)
+
+    def test_authenticated_price_lookup_updates_scan_result(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            config_path = tmp / "config.json"
+            config_path.write_text(json.dumps({"audibleMarketplace": "us"}), encoding="utf-8")
+            auth_path = tmp / "audible-auth.json"
+            auth_path.write_text(
+                json.dumps(
+                    {
+                        "schemaVersion": 1,
+                        "status": "ready",
+                        "marketplace": "us",
+                        "domain": "com",
+                        "refreshToken": "refresh",
+                        "accessToken": "access",
+                        "expires": 4_102_444_800,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            fixtures = tmp / "fixtures"
+            write_want_to_read_fixtures(
+                fixtures,
+                search={
+                    "Deal Book Jane Story": f"<ol>{audible_search_card('Deal Book', 'Jane Story', 'B000000001')}</ol>",
+                },
+            )
+            pricing_payload = {
+                "product": {
+                    "price": {
+                        "currency_code": "USD",
+                        "list_price": {"amount": 20.0},
+                        "member_price": {"amount": 5.0},
+                    }
+                }
+            }
+            with mock.patch.object(audible_auth, "_get_json", return_value=pricing_payload):
+                report, _markdown, rc = want_to_read_scan.scan_want_to_read(
+                    {
+                        "configPath": str(config_path),
+                        "title": "Deal Book",
+                        "author": "Jane Story",
+                        "offlineFixtures": str(fixtures),
+                        "audibleAuthPath": str(auth_path),
+                        "requestDelay": 0,
+                        "maxRequests": 3,
+                    }
+                )
+        self.assertEqual(rc, 0)
+        self.assertEqual(report["requestBudget"]["used"], 2)
+        self.assertTrue(report["metadata"]["authenticatedPriceLookup"])
+        self.assertEqual(report["results"][0]["status"], "discounted")
+        self.assertEqual(report["results"][0]["pricing"]["discountPercent"], 75)
 
     def test_budget_counts_product_fetch_separately_and_renders_partial(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

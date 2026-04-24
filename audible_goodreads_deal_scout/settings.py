@@ -119,6 +119,7 @@ def config_template(**overrides: Any) -> dict[str, Any]:
         "freshnessDays": DEFAULT_FRESHNESS_DAYS,
         "csvColumns": {},
         "audibleDealUrl": None,
+        "audibleAuthPath": None,
         "dailyCron": None,
         "deliveryChannel": None,
         "deliveryTarget": None,

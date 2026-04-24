@@ -106,6 +106,7 @@ Run:
 ```bash
 sh "{baseDir}/scripts/audible-goodreads-deal-scout.sh" scan-want-to-read \
   --config-path "<config-path>" \
+  [--audible-auth-path "<auth-path>"] \
   [--limit 40] \
   [--offset 0] \
   [--scan-order newest] \
@@ -120,6 +121,22 @@ Default behavior:
 - Use `--offset` and `--limit` for large Goodreads backlogs.
 
 Important caveat: Audible often hides cash prices behind credit or membership UI. Treat `price_hidden`, `price_unknown`, and `needs_review` as honest uncertainty, not as failures.
+
+Optional authenticated pricing:
+- If the user asks for headless authenticated Audible prices, use `audible-auth-start` and `audible-auth-finish`.
+- Do not ask for the user's Audible or Amazon password.
+- Store the auth file under the workspace storage directory, for example `<workspace>/.audible-goodreads-deal-scout/audible-auth.json`.
+- Treat the auth file as sensitive and never paste its token contents into chat.
+
+```bash
+sh "{baseDir}/scripts/audible-goodreads-deal-scout.sh" audible-auth-start \
+  --auth-path "<workspace>/.audible-goodreads-deal-scout/audible-auth.json" \
+  --audible-marketplace us
+
+sh "{baseDir}/scripts/audible-goodreads-deal-scout.sh" audible-auth-finish \
+  --auth-path "<workspace>/.audible-goodreads-deal-scout/audible-auth.json" \
+  --redirect-url "<final-amazon-redirect-url>"
+```
 
 ## Ready flow
 

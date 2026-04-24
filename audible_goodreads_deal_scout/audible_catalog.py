@@ -329,6 +329,7 @@ class AudibleCatalogClient:
         no_cache: bool = False,
         offline_fixtures: Path | None = None,
         fetcher: Callable[[str], tuple[str, str]] | None = None,
+        authenticated_price_lookup: Callable[[str, int], dict[str, Any]] | None = None,
     ) -> None:
         self.cache_dir = cache_dir
         self.max_requests = max_requests
@@ -337,6 +338,7 @@ class AudibleCatalogClient:
         self.no_cache = no_cache
         self.offline_fixtures = offline_fixtures
         self.fetcher = fetcher or fetch_catalog_text_with_final_url
+        self.authenticated_price_lookup = authenticated_price_lookup
         self.live_requests = 0
         self.live_block_failures = 0
         self.consecutive_block_failures = 0
@@ -464,6 +466,16 @@ class AudibleCatalogClient:
             return self._base_result(book, search_url, "not_found", "not_found", selected_reason, candidate_notes)
         if selected_status == "needs_review":
             return self._card_result(book, search_url, selected, "needs_review", "needs_review", selected_reason, candidate_notes)
+        if self.authenticated_price_lookup:
+            authenticated_result = self._authenticated_price_result(
+                book,
+                search_url,
+                selected,
+                candidate_notes,
+                min_discount_percent,
+            )
+            if authenticated_result is not None:
+                return authenticated_result
         offer = dict(selected.get("offer") or {})
         hidden_status = offer.get("hiddenStatus")
         if hidden_status in {"price_hidden", "included_with_membership"}:
@@ -473,6 +485,56 @@ class AudibleCatalogClient:
         if offer.get("currentPrice") is not None or offer.get("listPrice") is not None:
             return self._card_result(book, search_url, selected, "price_unknown", "matched", "search result exposed incomplete price data", candidate_notes)
         return self._card_result(book, search_url, selected, "price_unknown", "matched", "matched search result did not expose usable pricing", candidate_notes)
+
+    def _authenticated_price_result(
+        self,
+        book: dict[str, Any],
+        search_url: str,
+        card: dict[str, Any],
+        candidate_notes: list[dict[str, Any]],
+        min_discount_percent: int,
+    ) -> dict[str, Any] | None:
+        product_id = normalize_space(str(card.get("productId") or ""))
+        if not product_id:
+            return None
+        if self.live_requests >= self.max_requests:
+            return self._card_result(
+                book,
+                search_url,
+                {**card, "offer": {"currencyCode": "USD", "currentPrice": None, "listPrice": None, "discountPercent": None}},
+                "price_unknown",
+                "matched",
+                "request budget was insufficient for authenticated price lookup",
+                candidate_notes,
+            )
+        try:
+            if self.live_requests > 0 and self.request_delay > 0:
+                time.sleep(self.request_delay)
+            self.live_requests += 1
+            pricing = self.authenticated_price_lookup(product_id, min_discount_percent)
+        except Exception as exc:
+            self.ordinary_failures += 1
+            result = self._card_result(
+                book,
+                search_url,
+                {**card, "offer": {"currencyCode": "USD", "currentPrice": None, "listPrice": None, "discountPercent": None}},
+                "price_unknown",
+                "matched",
+                f"authenticated Audible price lookup failed: {exc}",
+                candidate_notes,
+            )
+            result["warnings"].append(f"audible_api_authenticated: {exc}")
+            return result
+        status = str(pricing.get("pricingStatus") or "price_unknown")
+        offer = {
+            "currencyCode": pricing.get("currencyCode") or "USD",
+            "currentPrice": pricing.get("currentPrice"),
+            "listPrice": pricing.get("listPrice"),
+            "discountPercent": pricing.get("discountPercent"),
+            "hiddenStatus": status if status in {"price_hidden", "included_with_membership"} else None,
+        }
+        reason = "authenticated Audible API price lookup"
+        return self._card_result(book, search_url, {**card, "offer": offer}, status, "matched", reason, candidate_notes)
 
     def _confirm_discount(
         self,
