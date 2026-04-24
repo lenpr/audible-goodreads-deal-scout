@@ -315,7 +315,7 @@ def _price_to_float(value: Any) -> float | None:
         except ValueError:
             return None
     if isinstance(value, dict):
-        for key in ("amount", "value", "price", "display_amount"):
+        for key in ("amount", "base", "value", "price", "display_amount"):
             parsed = _price_to_float(value.get(key))
             if parsed is not None:
                 return parsed
@@ -397,7 +397,6 @@ def authenticated_product_pricing(auth_path: Path, asin: str, *, threshold: int 
         url,
         {
             "Authorization": "Bearer " + str(auth["accessToken"]),
-            "client-id": "0",
             "Accept": "application/json",
             "Content-Type": "application/json",
         },

@@ -1343,8 +1343,8 @@ class WantToReadScanTests(unittest.TestCase):
                     "asin": "B000000001",
                     "price": {
                         "currency_code": "USD",
-                        "list_price": {"amount": 14.95},
-                        "member_price": {"amount": 4.99},
+                        "list_price": {"base": 14.95},
+                        "lowest_price": {"base": 4.99},
                     },
                 }
             }
@@ -1385,8 +1385,8 @@ class WantToReadScanTests(unittest.TestCase):
                 "product": {
                     "price": {
                         "currency_code": "USD",
-                        "list_price": {"amount": 20.0},
-                        "member_price": {"amount": 5.0},
+                        "list_price": {"base": 20.0},
+                        "lowest_price": {"base": 5.0},
                     }
                 }
             }
