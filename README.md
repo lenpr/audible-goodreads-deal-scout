@@ -46,8 +46,8 @@ clawhub login
 clawhub publish . \
   --slug audible-goodreads-deal-scout \
   --name "Audible Goodreads Deal Scout" \
-  --version 0.1.4 \
-  --changelog "Add Want-to-Read discount scan and optional authenticated Audible price lookup" \
+  --version 0.1.5 \
+  --changelog "Add optional headless authenticated Audible price lookup" \
   --tags latest
 ```
 
@@ -525,7 +525,7 @@ Useful checks:
 
 ```bash
 sh ./scripts/audible-goodreads-deal-scout.sh show-csv-headers "/absolute/path/to/goodreads_library_export.csv"
-sh ./scripts/audible-goodreads-deal-scout.sh publish-audit --version 0.1.4 --tags latest
+sh ./scripts/audible-goodreads-deal-scout.sh publish-audit --version 0.1.5 --tags latest
 ```
 
 If your OpenClaw install strips executable bits from bundled scripts, run the wrapper through `sh` exactly as shown above and in `SKILL.md`.
@@ -554,7 +554,7 @@ Useful helper commands:
 ```bash
 sh ./scripts/audible-goodreads-deal-scout.sh show-csv-headers "/absolute/path/to/goodreads_library_export.csv"
 sh ./scripts/audible-goodreads-deal-scout.sh measure-context --goodreads-csv "/absolute/path/to/goodreads_library_export.csv" --output /tmp/fit-context.json
-sh ./scripts/audible-goodreads-deal-scout.sh publish-audit --version 0.1.4
+sh ./scripts/audible-goodreads-deal-scout.sh publish-audit --version 0.1.5
 ```
 
 Finalize and deliver in one step:
@@ -587,7 +587,7 @@ sh ./scripts/audible-goodreads-deal-scout.sh run-and-deliver \
 Before publishing, run:
 
 ```bash
-sh ./scripts/audible-goodreads-deal-scout.sh publish-audit --version 0.1.4 --tags latest
+sh ./scripts/audible-goodreads-deal-scout.sh publish-audit --version 0.1.5 --tags latest
 ```
 
 ## Why this is worth publishing
