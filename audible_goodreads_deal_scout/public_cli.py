@@ -116,6 +116,10 @@ def build_parser() -> argparse.ArgumentParser:
     scan_parser.add_argument("--verbose", action="store_true")
     scan_parser.add_argument("--progress", choices=("plain", "json", "none"), default="plain")
     scan_parser.add_argument("--progress-interval", type=float, default=5.0)
+    scan_parser.set_defaults(enrich_goodreads_ratings=None)
+    scan_parser.add_argument("--enrich-goodreads-ratings", dest="enrich_goodreads_ratings", action="store_true")
+    scan_parser.add_argument("--no-goodreads-rating-enrichment", dest="enrich_goodreads_ratings", action="store_false")
+    scan_parser.add_argument("--goodreads-rating-limit", type=int)
     scan_parser.add_argument("--refresh-cache", action="store_true")
     scan_parser.add_argument("--no-cache", action="store_true")
     scan_parser.add_argument("--offline-fixtures")
@@ -355,6 +359,8 @@ def command_scan_want_to_read(args: argparse.Namespace) -> int:
         "verbose": args.verbose,
         "progress": args.progress,
         "progressInterval": args.progress_interval,
+        "enrichGoodreadsRatings": args.enrich_goodreads_ratings,
+        "goodreadsRatingLimit": args.goodreads_rating_limit,
         "refreshCache": args.refresh_cache,
         "noCache": args.no_cache,
         "offlineFixtures": args.offline_fixtures,
@@ -432,6 +438,7 @@ def command_publish_audit(args: argparse.Namespace) -> int:
         "audible_goodreads_deal_scout/audible_auth.py": skill_dir / "audible_goodreads_deal_scout" / "audible_auth.py",
         "audible_goodreads_deal_scout/audible_catalog.py": skill_dir / "audible_goodreads_deal_scout" / "audible_catalog.py",
         "audible_goodreads_deal_scout/cli_errors.py": skill_dir / "audible_goodreads_deal_scout" / "cli_errors.py",
+        "audible_goodreads_deal_scout/goodreads_rating.py": skill_dir / "audible_goodreads_deal_scout" / "goodreads_rating.py",
         "audible_goodreads_deal_scout/want_to_read_scan.py": skill_dir / "audible_goodreads_deal_scout" / "want_to_read_scan.py",
         "audible_goodreads_deal_scout/diagnostics.py": skill_dir / "audible_goodreads_deal_scout" / "diagnostics.py",
         "audible_goodreads_deal_scout/runtime_contract.py": skill_dir / "audible_goodreads_deal_scout" / "runtime_contract.py",

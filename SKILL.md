@@ -112,6 +112,8 @@ sh "{baseDir}/scripts/audible-goodreads-deal-scout.sh" scan-want-to-read \
   [--offset 0] \
   [--scan-order newest] \
   [--progress plain] \
+  [--no-goodreads-rating-enrichment] \
+  [--goodreads-rating-limit 20] \
   [--output-json "<json-path>"] \
   [--output-md "<markdown-path>"]
 ```
@@ -124,6 +126,8 @@ Default behavior:
 - Suppress duplicate Audible product matches in the final report while preserving scanned-row counts.
 - Use `--offset` and `--limit` for large Goodreads backlogs.
 - For long agent-run scans, prefer `--progress json` plus `--output-json` and `--output-md` so progress logs and final reports stay separate.
+- Use `pricing.priceBasis` and `pricing.dealType` to distinguish member cash prices below list from true limited-time sale or promotion signals.
+- If CSV average ratings are missing, the command may enrich a small number of discounted rows from public Goodreads book pages by Goodreads book id. Disable with `--no-goodreads-rating-enrichment` when the user wants no Goodreads page fetches.
 
 Important caveat: Audible often hides cash prices behind credit or membership UI. Treat `price_hidden`, `price_unknown`, and `needs_review` as honest uncertainty, not as failures.
 
@@ -134,7 +138,7 @@ Optional authenticated pricing:
 - Treat the auth file as sensitive and never paste its token contents into chat.
 - Authenticated scans usually spend one search request plus one authenticated price request for each matched title; set `--max-requests` accordingly.
 - Treat cash pricing fields as the source of truth and do not classify Audible credit prices, including `credit_price`, as cash discounts.
-- Treat authenticated `discounted` as "member-visible cash price below list price", not proof of a limited-time sale.
+- Treat authenticated `discounted` as "member-visible cash price below list price", not proof of a limited-time sale; check `pricing.dealType`.
 - Use `audible-auth-status` to check readiness, expiry, and file permissions without exposing tokens.
 
 ```bash

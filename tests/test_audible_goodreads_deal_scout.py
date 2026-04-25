@@ -18,6 +18,7 @@ from audible_goodreads_deal_scout import audible_auth  # noqa: E402
 from audible_goodreads_deal_scout import audible_catalog  # noqa: E402
 from audible_goodreads_deal_scout import diagnostics  # noqa: E402
 from audible_goodreads_deal_scout import delivery as delivery_mod  # noqa: E402
+from audible_goodreads_deal_scout import goodreads_rating  # noqa: E402
 from audible_goodreads_deal_scout import repo_audit  # noqa: E402
 from audible_goodreads_deal_scout import rendering  # noqa: E402
 from audible_goodreads_deal_scout import want_to_read_scan  # noqa: E402
@@ -183,6 +184,27 @@ def read_message_fixture(name: str) -> str:
 
 
 class AudibleGoodreadsDealScoutTests(unittest.TestCase):
+    def test_prepare_retries_transient_no_active_promotion(self) -> None:
+        no_deal_html = AUDIBLE_HTML.replace(
+            "Get today's Daily Deal before time runs out! $4.99 Deal ends @ 11:59PM PT.",
+            "No active deal is visible yet.",
+        )
+        calls = {"count": 0}
+
+        def flaky_fetcher(_: str) -> tuple[str, str]:
+            calls["count"] += 1
+            if calls["count"] == 1:
+                return no_deal_html, "https://www.audible.com/dailydeal"
+            return AUDIBLE_HTML, "https://www.audible.com/pd/Signal-Fire-Audiobook/ABC1234567"
+
+        result = core.prepare_run(
+            {"audibleMarketplace": "us", "audibleFetchRetries": 1, "audibleFetchBackoffSeconds": 0},
+            fetcher=flaky_fetcher,
+        )
+        self.assertEqual(result["status"], "ready")
+        self.assertEqual(calls["count"], 2)
+        self.assertTrue(any("Retrying Audible daily promotion fetch" in warning for warning in result["warnings"]))
+
     def test_setup_writes_config_and_preferences(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp = Path(tmp_dir)
@@ -1165,6 +1187,23 @@ class WantToReadScanTests(unittest.TestCase):
         self.assertEqual(len(entries), 1)
         self.assertEqual(entries[0]["rowKey"], "goodreads:10")
 
+    def test_goodreads_csv_accepts_alternate_average_rating_header(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            csv_path = tmp / "goodreads.csv"
+            headers = ["Community Rating" if header == "Average Rating" else header for header in GOODREADS_HEADERS]
+            payload = scan_row("10", "Rated Book", "Jane Story", "2026/04/03")
+            payload["Community Rating"] = "4.37"
+            payload.pop("Average Rating")
+            with csv_path.open("w", encoding="utf-8", newline="") as handle:
+                writer = csv.DictWriter(handle, fieldnames=headers)
+                writer.writeheader()
+                writer.writerow(payload)
+            rows, stats = core.load_goodreads_csv(csv_path)
+        self.assertEqual(stats["columnMap"]["average_rating"], "Community Rating")
+        self.assertEqual(rows[0]["averageRating"], 4.37)
+        self.assertEqual(rows[0]["averageRatingSource"], "csv_average_rating")
+
     def test_select_entries_supports_order_offset_limit_and_seed(self) -> None:
         entries = [
             {"rowKey": "a", "title": "A", "dateAdded": "2026-04-01"},
@@ -1213,7 +1252,7 @@ class WantToReadScanTests(unittest.TestCase):
                     "Missing Book Jane Story": f"<ol>{audible_search_card('Unrelated Book', 'Other Writer', 'B000000006')}</ol>",
                 },
                 product={
-                    deal_url: "<main><span>Regular Price: $14.95</span><span>$4.99</span></main>",
+                    deal_url: "<main><span>Regular Price: $14.95</span><span>Sale Price: $4.99</span></main>",
                 },
             )
             report, markdown, rc = want_to_read_scan.scan_want_to_read(
@@ -1233,6 +1272,7 @@ class WantToReadScanTests(unittest.TestCase):
         self.assertEqual(report["requestBudget"]["used"], 6)
         self.assertEqual(report["results"][0]["status"], "discounted")
         self.assertEqual(report["results"][0]["audible"]["title"], "Deal Book")
+        self.assertEqual(report["results"][0]["pricing"]["dealType"], "limited_time_sale")
         self.assertIn("Deal Book", markdown)
         self.assertNotIn("Hidden Book", markdown)
         self.assertIn("Summary:", markdown)
@@ -1383,6 +1423,63 @@ class WantToReadScanTests(unittest.TestCase):
         self.assertEqual(offer["currentPrice"], 4.99)
         self.assertEqual(offer["listPrice"], 14.95)
         self.assertEqual(offer["discountPercent"], 67)
+        self.assertEqual(offer["priceBasis"], "audible_public_cash")
+        self.assertEqual(offer["dealType"], "limited_time_sale")
+
+    def test_goodreads_rating_parser_reads_json_ld_aggregate_rating(self) -> None:
+        payload = goodreads_rating.parse_goodreads_rating(
+            """
+            <script type="application/ld+json">
+            {"@type":"Book","aggregateRating":{"ratingValue":"4.42","ratingCount":"12,345"}}
+            </script>
+            """
+        )
+        self.assertEqual(payload["averageRating"], 4.42)
+        self.assertEqual(payload["ratingsCount"], 12345)
+
+    def test_want_to_read_scan_enriches_missing_goodreads_rating_for_discounted_results(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            csv_path = tmp / "goodreads.csv"
+            item = scan_row("42", "Deal Book", "Jane Story", "2026/04/05")
+            item["Average Rating"] = ""
+            write_rows(csv_path, [item])
+            config_path = tmp / "config.json"
+            config_path.write_text(json.dumps({"audibleMarketplace": "us", "goodreadsCsvPath": str(csv_path)}), encoding="utf-8")
+            fixtures = tmp / "fixtures"
+            deal_url = "https://www.audible.com/pd/Deal-Book-Audiobook/B000000001"
+            write_want_to_read_fixtures(
+                fixtures,
+                search={
+                    "Deal Book Jane Story": f"<ol>{audible_search_card('Deal Book', 'Jane Story', 'B000000001', 'Regular Price: $14.95 Sale Price: $4.99')}</ol>",
+                },
+                product={
+                    deal_url: "<main><span>Regular Price: $14.95</span><span>Sale Price: $4.99</span></main>",
+                },
+            )
+
+            def rating_fetcher(_url: str) -> tuple[str, str]:
+                return (
+                    '<script type="application/ld+json">'
+                    '{"@type":"Book","aggregateRating":{"ratingValue":"4.51","ratingCount":"999"}}'
+                    "</script>",
+                    "https://www.goodreads.com/book/show/42",
+                )
+
+            report, _markdown, rc = want_to_read_scan.scan_want_to_read(
+                {
+                    "configPath": str(config_path),
+                    "offlineFixtures": str(fixtures),
+                    "enrichGoodreadsRatings": True,
+                    "requestDelay": 0,
+                    "maxRequests": 5,
+                },
+                goodreads_fetcher=rating_fetcher,
+            )
+        self.assertEqual(rc, 0)
+        self.assertEqual(report["results"][0]["goodreads"]["averageRating"], 4.51)
+        self.assertEqual(report["results"][0]["goodreads"]["averageRatingSource"], "goodreads_public_page")
+        self.assertEqual(report["goodreadsRatingEnrichment"]["updated"], 1)
 
     def test_search_parser_reads_live_like_nested_author_block(self) -> None:
         html = """
@@ -1554,6 +1651,8 @@ class WantToReadScanTests(unittest.TestCase):
         self.assertEqual(pricing["currentPrice"], 4.99)
         self.assertEqual(pricing["listPrice"], 14.95)
         self.assertEqual(pricing["discountPercent"], 67)
+        self.assertEqual(pricing["priceBasis"], "audible_member_cash")
+        self.assertEqual(pricing["dealType"], "member_cash_below_list")
 
     def test_authenticated_price_lookup_updates_scan_result(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -1608,6 +1707,8 @@ class WantToReadScanTests(unittest.TestCase):
         self.assertTrue(report["metadata"]["authenticatedPriceLookup"])
         self.assertEqual(report["results"][0]["status"], "discounted")
         self.assertEqual(report["results"][0]["pricing"]["discountPercent"], 75)
+        self.assertEqual(report["results"][0]["pricing"]["priceBasis"], "audible_member_cash")
+        self.assertEqual(report["results"][0]["pricing"]["dealType"], "member_cash_below_list")
         self.assertIn("authenticated Audible cash pricing enabled", markdown)
         self.assertIn("Cache:", markdown)
 

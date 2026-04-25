@@ -5,6 +5,9 @@
 - Add stderr progress reporting for long Want-to-Read scans, including JSONL mode for OpenClaw agents and log processors
 - Suppress duplicate Audible product matches in final Want-to-Read reports while preserving scanned-row counts and duplicate metadata in JSON
 - Add scan report metadata for authenticated-pricing state, cache stats, request usage, and next-batch hints
+- Add `priceBasis` and `dealType` fields so reports can distinguish member cash prices below list from limited-time sale or promotion signals
+- Enrich missing Goodreads average ratings for a capped number of discounted Want-to-Read results by Goodreads book id
+- Retry transient daily-promotion fetch failures and temporary no-active-promotion parses before suppressing or erroring
 - Clarify that authenticated `discounted` means member-visible cash price below list price, not guaranteed limited-time sale status
 - Improve release and troubleshooting docs for long scans, authenticated price lookup, and local readiness checks
 - Reduce duplicated scan-progress bookkeeping in the Want-to-Read scan implementation

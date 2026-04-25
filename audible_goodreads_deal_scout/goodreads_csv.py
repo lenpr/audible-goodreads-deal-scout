@@ -73,6 +73,7 @@ def load_goodreads_csv(export_path: Path, csv_columns: dict[str, str] | None = N
         for raw in reader:
             title = normalize_space(raw.get(mapping["title"]) or "")
             author = normalize_space(raw.get(mapping["author"]) or "")
+            average_rating = parse_float(raw.get(mapping.get("average_rating", "")))
             exclusive, shelves = canonicalize_bookshelves(
                 raw.get(mapping["shelf"]) or "",
                 raw.get(mapping.get("bookshelves", "")) or "",
@@ -85,7 +86,8 @@ def load_goodreads_csv(export_path: Path, csv_columns: dict[str, str] | None = N
                 "bookshelves": shelves,
                 "myRating": parse_rating(raw.get(mapping.get("rating", ""))),
                 "myReview": normalize_space(strip_html(raw.get(mapping.get("review", "")) or "")),
-                "averageRating": parse_float(raw.get(mapping.get("average_rating", ""))),
+                "averageRating": average_rating,
+                "averageRatingSource": "csv_average_rating" if average_rating is not None else None,
                 "dateRead": normalize_space(raw.get(mapping.get("date_read", "")) or ""),
                 "dateAdded": normalize_space(raw.get(mapping.get("date_added", "")) or ""),
                 "isbn": normalize_space(raw.get(mapping.get("isbn", "")) or ""),

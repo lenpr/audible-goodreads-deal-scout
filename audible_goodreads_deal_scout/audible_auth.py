@@ -471,6 +471,14 @@ def parse_authenticated_pricing(product_payload: dict[str, Any], *, threshold: i
     list_price = _round_price(list_price)
     plan_text = json.dumps(product, sort_keys=True, ensure_ascii=False).casefold()
     included = any(marker in plan_text for marker in ("included", "plus catalog", "all you can eat", "rodizio"))
+    price_basis = "unknown"
+    deal_type = "unknown"
+    if current_price is not None or list_price is not None:
+        price_basis = "audible_member_cash"
+        deal_type = "member_cash_below_list" if discount_percent is not None else "none"
+    if included:
+        price_basis = "audible_membership"
+        deal_type = "included_with_membership"
     if discount_percent is not None and discount_percent >= threshold:
         status = "discounted"
     elif current_price is not None and list_price is not None:
@@ -486,6 +494,8 @@ def parse_authenticated_pricing(product_payload: dict[str, Any], *, threshold: i
         "currentPrice": current_price,
         "listPrice": list_price,
         "discountPercent": discount_percent,
+        "priceBasis": price_basis,
+        "dealType": deal_type,
         "pricingStatus": status,
         "source": "audible_api_authenticated",
     }

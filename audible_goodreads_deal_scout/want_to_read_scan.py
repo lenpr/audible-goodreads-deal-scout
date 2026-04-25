@@ -11,6 +11,7 @@ from typing import Any, Callable, TextIO
 from .audible_auth import authenticated_product_pricing
 from .audible_catalog import AudibleCatalogClient, RequestBudgetExceeded, deterministic_shuffle
 from .goodreads_csv import effective_shelf, load_goodreads_csv
+from .goodreads_rating import lookup_goodreads_rating
 from .settings import default_config_path, default_storage_dir, load_config, validate_marketplace
 from .shared import normalize_author_key, normalize_space, normalized_key, write_json_atomic
 
@@ -84,6 +85,8 @@ def goodreads_scan_entry(row: dict[str, Any], index: int) -> dict[str, Any]:
         "title": normalize_space(str(row.get("title") or "")),
         "author": normalize_space(str(row.get("author") or "")),
         "averageRating": row.get("averageRating"),
+        "averageRatingSource": row.get("averageRatingSource"),
+        "ratingsCount": None,
         "dateAdded": parse_goodreads_date(str(row.get("dateAdded") or "")) or normalize_space(str(row.get("dateAdded") or "")) or None,
         "isbn": normalize_space(str(row.get("isbn") or "")) or None,
         "isbn13": normalize_space(str(row.get("isbn13") or "")) or None,
@@ -215,6 +218,65 @@ def dedupe_ranked_results(results: list[dict[str, Any]]) -> tuple[list[dict[str,
     }
 
 
+def enrich_goodreads_ratings(
+    results: list[dict[str, Any]],
+    *,
+    cache_dir: Path,
+    limit: int,
+    refresh_cache: bool,
+    no_cache: bool,
+    request_delay: float,
+    fetcher: Callable[[str], tuple[str, str]] | None = None,
+) -> dict[str, Any]:
+    stats = {
+        "enabled": True,
+        "attempted": 0,
+        "updated": 0,
+        "cacheHits": 0,
+        "skippedExisting": 0,
+        "skippedNoBookId": 0,
+        "failed": 0,
+        "limit": max(0, limit),
+    }
+    if limit <= 0:
+        return stats
+    for result in results:
+        if result.get("status") != "discounted":
+            continue
+        goodreads = result.get("goodreads") if isinstance(result.get("goodreads"), dict) else {}
+        if goodreads.get("averageRating") is not None:
+            stats["skippedExisting"] += 1
+            continue
+        book_id = normalize_space(str(goodreads.get("bookId") or ""))
+        if not book_id:
+            stats["skippedNoBookId"] += 1
+            continue
+        if stats["attempted"] >= limit:
+            break
+        if stats["attempted"] > 0 and request_delay > 0:
+            time.sleep(request_delay)
+        stats["attempted"] += 1
+        try:
+            rating = lookup_goodreads_rating(
+                book_id,
+                cache_dir=cache_dir,
+                refresh_cache=refresh_cache,
+                no_cache=no_cache,
+                fetcher=fetcher,
+            )
+        except Exception:
+            stats["failed"] += 1
+            continue
+        if rating.get("cacheHit"):
+            stats["cacheHits"] += 1
+        goodreads["averageRating"] = rating.get("averageRating")
+        goodreads["averageRatingSource"] = rating.get("source")
+        goodreads["ratingsCount"] = rating.get("ratingsCount")
+        goodreads["url"] = rating.get("url")
+        stats["updated"] += 1
+    return stats
+
+
 def count_results(results: list[dict[str, Any]], *, total_to_read: int, selected_rows: int, scanned_rows: int | None = None) -> dict[str, Any]:
     statuses = Counter(str(result.get("status") or "unknown") for result in results)
     return {
@@ -326,10 +388,19 @@ def _price_line(result: dict[str, Any]) -> str:
     current = pricing.get("currentPrice")
     list_price = pricing.get("listPrice")
     discount = pricing.get("discountPercent")
+    deal_type = str(pricing.get("dealType") or "")
+    label = {
+        "limited_time_sale": "limited-time sale/promotion",
+        "member_cash_below_list": "member cash below list",
+        "cash_price_below_list": "cash price below list",
+        "included_with_membership": "included with membership",
+    }.get(deal_type)
     if current is not None and list_price is not None and discount is not None:
-        return f"${float(current):.2f} (-{int(discount)}%, list ${float(list_price):.2f})"
+        price = f"${float(current):.2f} (-{int(discount)}%, list ${float(list_price):.2f})"
+        return price + (f"; {label}" if label else "")
     if current is not None:
-        return f"${float(current):.2f}"
+        price = f"${float(current):.2f}"
+        return price + (f"; {label}" if label else "")
     return str(pricing.get("pricingStatus") or result.get("status") or "unknown").replace("_", " ")
 
 
@@ -476,6 +547,8 @@ def _single_book_entry(title: str, author: str) -> dict[str, Any]:
         "title": normalize_space(title),
         "author": normalize_space(author),
         "averageRating": None,
+        "averageRatingSource": None,
+        "ratingsCount": None,
         "dateAdded": None,
         "isbn": None,
         "isbn13": None,
@@ -486,6 +559,7 @@ def scan_want_to_read(
     options: dict[str, Any],
     *,
     fetcher: Callable[[str], tuple[str, str]] | None = None,
+    goodreads_fetcher: Callable[[str], tuple[str, str]] | None = None,
 ) -> tuple[dict[str, Any], str, int]:
     """Run a stateless Want-to-Read scan and return structured JSON, Markdown, and an exit code."""
     config_path = Path(str(options.get("configPath") or default_config_path())).expanduser().resolve()
@@ -508,6 +582,9 @@ def scan_want_to_read(
             raise ValueError("--progress must be one of: json, none, plain.")
         progress_interval = float(config.get("progressInterval") if config.get("progressInterval") is not None else 5.0)
         min_discount_percent = int(config.get("minDiscountPercent") or 10)
+        enrich_ratings = config.get("enrichGoodreadsRatings")
+        enrich_goodreads_ratings_enabled = not bool(config.get("offlineFixtures")) if enrich_ratings is None else bool(enrich_ratings)
+        goodreads_rating_limit = int(config.get("goodreadsRatingLimit") or 20)
         audible_auth_path = normalize_space(str(config.get("audibleAuthPath") or ""))
         title = normalize_space(str(config.get("title") or ""))
         author = normalize_space(str(config.get("author") or ""))
@@ -650,6 +727,18 @@ def scan_want_to_read(
         )
 
     ranked_raw_results = rank_results(results)
+    rating_enrichment = {"enabled": False}
+    if enrich_goodreads_ratings_enabled:
+        rating_enrichment = enrich_goodreads_ratings(
+            ranked_raw_results,
+            cache_dir=storage_dir / "cache" / "goodreads",
+            limit=goodreads_rating_limit,
+            refresh_cache=bool(config.get("refreshCache")),
+            no_cache=bool(config.get("noCache")),
+            request_delay=request_delay,
+            fetcher=goodreads_fetcher,
+        )
+        ranked_raw_results = rank_results(ranked_raw_results)
     ranked_results, deduplication = dedupe_ranked_results(ranked_raw_results)
     counts = count_results(ranked_results, total_to_read=total_to_read, selected_rows=selected_count, scanned_rows=len(results))
     counts["duplicateAudibleProducts"] = int(deduplication.get("suppressedDuplicateCount") or 0)
@@ -670,6 +759,7 @@ def scan_want_to_read(
         },
         "requestBudget": _request_budget_summary(max_requests, client.live_requests),
         "cache": client.cache_summary(),
+        "goodreadsRatingEnrichment": rating_enrichment,
         "deduplication": deduplication,
         "counts": counts,
         "warnings": warnings,

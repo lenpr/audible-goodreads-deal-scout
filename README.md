@@ -252,6 +252,16 @@ The scan is deliberately conservative. If Audible hides cash pricing behind cred
 
 The Markdown report shows whether authenticated pricing was enabled, live request usage, cache hits/writes, and a suggested next `--offset` command when more selected Want-to-Read books remain.
 
+Pricing fields now separate two ideas:
+- `priceBasis` says where the price came from, for example `audible_public_cash` or `audible_member_cash`.
+- `dealType` says what kind of opportunity it appears to be, for example `limited_time_sale`, `member_cash_below_list`, or `cash_price_below_list`.
+
+Goodreads ratings:
+- If your Goodreads CSV includes an average-rating column, the scan uses it for ranking.
+- If the CSV does not include that column, the scan can enrich up to 20 discounted results from public Goodreads book pages when the CSV has Goodreads book ids.
+- Use `--no-goodreads-rating-enrichment` if you want to avoid those public Goodreads rating lookups.
+- Use `--goodreads-rating-limit N` to adjust the enrichment cap.
+
 Progress output:
 - `--progress plain` writes human-readable progress lines to stderr. This is the default CLI behavior.
 - `--progress json` writes JSONL progress events to stderr for agents and log processors.
@@ -296,7 +306,7 @@ You can also save the auth path in `config.json` as `audibleAuthPath`, or set it
 
 Authenticated scans usually spend one search request plus one authenticated price request for each matched Audible title. Use a higher `--max-requests` value than you would for anonymous scans. The authenticated price parser treats cash prices as the source of truth and ignores Audible credit prices such as `credit_price`.
 
-Authenticated `discounted` means Audible returned a member-visible cash price below its list price for the product. It does not always prove a limited-time sale; treat it as a useful price opportunity signal, not as checkout advice.
+Authenticated `discounted` means Audible returned a member-visible cash price below its list price for the product. It does not always prove a limited-time sale; check `dealType` in JSON if you need to distinguish `member_cash_below_list` from `limited_time_sale`.
 
 You can test one known Audible ASIN first:
 
@@ -553,6 +563,7 @@ Three issues cause most confusing runs:
 - Wrong notes path: if `notesFile` or `preferencesPath` points at a missing file, the prep step now returns `error_missing_notes_file` instead of silently continuing.
 - Wrong CSV header override: `--csv-column role=Header` must match the Goodreads export header exactly. If you are unsure, run `show-csv-headers` first.
 - Stale Goodreads export: if the CSV is old, the skill can still run, but read status, shelf state, and fit evidence may lag behind your actual library.
+- Transient Audible daily-deal pages: the prep step retries transient fetch failures and temporary no-active-promotion parses before returning a suppression or error.
 
 Useful checks:
 
@@ -613,6 +624,7 @@ sh ./scripts/audible-goodreads-deal-scout.sh run-and-deliver \
 - `audible_goodreads_deal_scout/audible_catalog.py`: Audible catalog search and conservative price parsing
 - `audible_goodreads_deal_scout/cli_errors.py`: structured CLI error payload helpers
 - `audible_goodreads_deal_scout/diagnostics.py`: local doctor/status checks
+- `audible_goodreads_deal_scout/goodreads_rating.py`: optional public Goodreads rating enrichment for Want-to-Read reports
 - `audible_goodreads_deal_scout/want_to_read_scan.py`: Goodreads Want-to-Read scan orchestration and report rendering
 - `audible_goodreads_deal_scout/runtime_contract.py`: runtime input, prompt, schema, and prepare-result artifact writing
 - `audible_goodreads_deal_scout/rendering.py`: card rendering and delivery planning

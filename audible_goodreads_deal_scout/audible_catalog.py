@@ -14,7 +14,7 @@ from typing import Any, Callable
 from urllib.error import HTTPError, URLError
 
 from .audible_source import AudibleBlockedError, AudibleFetchError, decode_response_bytes
-from .constants import AUDIBLE_BLOCK_MARKERS
+from .constants import AUDIBLE_BLOCK_MARKERS, PROMOTION_MARKERS
 from .shared import (
     normalize_author_key,
     normalize_space,
@@ -44,6 +44,13 @@ IGNORED_PRICE_CONTEXT_MARKERS = (
     "hardcover",
     "mass market",
     "print",
+)
+EXTRA_PROMOTION_MARKERS = (
+    "sale price",
+    "deal price",
+    "limited time",
+    "limited-time",
+    "promotion",
 )
 
 
@@ -192,7 +199,8 @@ def _price_values_near(text: str) -> list[float]:
 
 
 def parse_offer_text(html_text: str) -> dict[str, Any]:
-    hidden_status = hidden_price_status(strip_html(html_text))
+    plain_text = strip_html(html_text)
+    hidden_status = hidden_price_status(plain_text)
     list_price: float | None = None
     current_price: float | None = None
     for pattern in (
@@ -215,7 +223,6 @@ def parse_offer_text(html_text: str) -> dict[str, Any]:
         if list_price is None:
             list_price = parse_localized_price(strip_html(strike.group(1)))
             break
-    plain_text = strip_html(html_text)
     all_prices = _price_values_near(plain_text)
     if list_price is not None:
         lower_prices = [price for price in all_prices if price < list_price]
@@ -232,13 +239,61 @@ def parse_offer_text(html_text: str) -> dict[str, Any]:
     discount_percent = None
     if current_price is not None and list_price is not None and list_price > 0 and current_price < list_price:
         discount_percent = max(0, round((1 - current_price / list_price) * 100))
+    price_basis, deal_type = classify_price_semantics(
+        plain_text,
+        current_price=current_price,
+        list_price=list_price,
+        discount_percent=discount_percent,
+        hidden_status=hidden_status,
+        basis_when_numeric="audible_public_cash",
+    )
     return {
         "currencyCode": "USD",
         "currentPrice": current_price,
         "listPrice": list_price,
         "discountPercent": discount_percent,
+        "priceBasis": price_basis,
+        "dealType": deal_type,
         "hiddenStatus": hidden_status,
         "hasNumericDiscountHint": current_price is not None and list_price is not None,
+    }
+
+
+def has_limited_time_signal(text: str) -> bool:
+    lowered = text.casefold()
+    return any(marker in lowered for marker in PROMOTION_MARKERS + EXTRA_PROMOTION_MARKERS)
+
+
+def classify_price_semantics(
+    text: str,
+    *,
+    current_price: float | None,
+    list_price: float | None,
+    discount_percent: int | None,
+    hidden_status: str | None,
+    basis_when_numeric: str,
+) -> tuple[str, str]:
+    if hidden_status == "included_with_membership":
+        return "audible_membership", "included_with_membership"
+    if hidden_status == "price_hidden":
+        return "audible_credit_or_membership", "hidden_price"
+    if discount_percent is not None and current_price is not None and list_price is not None:
+        if has_limited_time_signal(text):
+            return basis_when_numeric, "limited_time_sale"
+        return basis_when_numeric, "cash_price_below_list"
+    if current_price is not None or list_price is not None:
+        return basis_when_numeric, "none"
+    return "unknown", "unknown"
+
+
+def unknown_offer() -> dict[str, Any]:
+    return {
+        "currencyCode": "USD",
+        "currentPrice": None,
+        "listPrice": None,
+        "discountPercent": None,
+        "priceBasis": "unknown",
+        "dealType": "unknown",
     }
 
 
@@ -517,7 +572,7 @@ class AudibleCatalogClient:
             return self._card_result(
                 book,
                 search_url,
-                {**card, "offer": {"currencyCode": "USD", "currentPrice": None, "listPrice": None, "discountPercent": None}},
+                {**card, "offer": unknown_offer()},
                 "price_unknown",
                 "matched",
                 "request budget was insufficient for authenticated price lookup",
@@ -533,7 +588,7 @@ class AudibleCatalogClient:
             result = self._card_result(
                 book,
                 search_url,
-                {**card, "offer": {"currencyCode": "USD", "currentPrice": None, "listPrice": None, "discountPercent": None}},
+                {**card, "offer": unknown_offer()},
                 "price_unknown",
                 "matched",
                 f"authenticated Audible price lookup failed: {exc}",
@@ -547,6 +602,8 @@ class AudibleCatalogClient:
             "currentPrice": pricing.get("currentPrice"),
             "listPrice": pricing.get("listPrice"),
             "discountPercent": pricing.get("discountPercent"),
+            "priceBasis": pricing.get("priceBasis") or "audible_member_cash",
+            "dealType": pricing.get("dealType") or "unknown",
             "hiddenStatus": status if status in {"price_hidden", "included_with_membership"} else None,
         }
         reason = "authenticated Audible API price lookup"
@@ -569,7 +626,7 @@ class AudibleCatalogClient:
             offer = dict(cached.get("offer") or {})
         else:
             if self.live_requests >= self.max_requests:
-                card_with_offer = {**card, "offer": {"currencyCode": "USD", "currentPrice": None, "listPrice": None, "discountPercent": None}}
+                card_with_offer = {**card, "offer": unknown_offer()}
                 return self._card_result(
                     book,
                     search_url,
@@ -607,7 +664,7 @@ class AudibleCatalogClient:
         return {
             "goodreads": book,
             "audible": {},
-            "pricing": {"currencyCode": "USD", "currentPrice": None, "listPrice": None, "discountPercent": None, "pricingStatus": status},
+            "pricing": {**unknown_offer(), "pricingStatus": status},
             "status": status,
             "matchStatus": match_status,
             "matchReason": reason,
@@ -640,6 +697,8 @@ class AudibleCatalogClient:
                 "currentPrice": offer.get("currentPrice"),
                 "listPrice": offer.get("listPrice"),
                 "discountPercent": offer.get("discountPercent"),
+                "priceBasis": offer.get("priceBasis") or "unknown",
+                "dealType": offer.get("dealType") or "unknown",
                 "pricingStatus": status,
             },
             "status": status,

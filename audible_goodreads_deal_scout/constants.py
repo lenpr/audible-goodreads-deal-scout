@@ -46,7 +46,7 @@ CSV_ROLE_DEFAULTS: dict[str, tuple[str, ...]] = {
     "bookshelves": ("Bookshelves",),
     "rating": ("My Rating",),
     "review": ("My Review",),
-    "average_rating": ("Average Rating",),
+    "average_rating": ("Average Rating", "Avg Rating", "Avg. Rating", "Book Average Rating", "Community Rating"),
     "date_read": ("Date Read",),
     "date_added": ("Date Added",),
     "isbn": ("ISBN",),
