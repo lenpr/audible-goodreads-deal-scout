@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.6
+
+- Add stderr progress reporting for long Want-to-Read scans, including JSONL mode for OpenClaw agents and log processors
+- Suppress duplicate Audible product matches in final Want-to-Read reports while preserving scanned-row counts and duplicate metadata in JSON
+- Add scan report metadata for authenticated-pricing state, cache stats, request usage, and next-batch hints
+- Clarify that authenticated `discounted` means member-visible cash price below list price, not guaranteed limited-time sale status
+- Improve release and troubleshooting docs for long scans, authenticated price lookup, and local readiness checks
+- Reduce duplicated scan-progress bookkeeping in the Want-to-Read scan implementation
+
 ## 0.1.5
 
 - Add stdlib-only headless Audible external-login auth helpers for optional authenticated price lookup
@@ -8,7 +17,6 @@
 - Add `doctor` and `audible-auth-status` commands for local readiness, auth expiry, and file-permission checks
 - Add structured CLI error payloads with token redaction for command failures
 - Ignore Audible credit prices when classifying authenticated cash discounts
-- Improve Want-to-Read scans with stderr progress reporting, duplicate Audible product suppression, authenticated-pricing state, cache stats, and next-batch hints
 - Clarify external-browser auth instructions and authenticated request budgeting
 - Move prepare-result artifact writing behind the runtime contract module boundary
 - Keep auth files out of published bundles and document that the auth file is sensitive local state

@@ -7,6 +7,7 @@ Use this before publishing a new version to ClawHub.
 - Run `python3 -m py_compile audible_goodreads_deal_scout/*.py tests/*.py`
 - Run `python3 -m unittest discover -s tests -p 'test_*.py'`
 - Run `sh ./scripts/audible-goodreads-deal-scout.sh publish-audit --version <version> --tags latest`
+- Run a short offline or cached Want-to-Read scan with `--progress json`, `--output-json`, and `--output-md` to verify progress and report output stay separate
 - Keep the documented `sh ./scripts/...` form unless you have verified your target install preserves executable bits on bundled scripts
 - Optional: run the local OpenClaw skill packager/validator against `.` if you use that publish workflow on this machine
 
@@ -34,11 +35,12 @@ Use this before publishing a new version to ClawHub.
 - Confirm placeholder paths and example content stay generic and public-safe
 - Confirm `README.md`, `CHANGELOG.md`, and `config.example.json` still match the current behavior
 - Keep public wording specific to evaluation and delivery; avoid language that implies checkout, payments, or wallet behavior if the skill does not actually do those things
+- Confirm `audible-auth*.json`, cache files, reports, and generated `.audible-goodreads-deal-scout/` state are not included in the published bundle
 
 ## Versioning
 
 - Bump version in your release command
 - Add the release note to `CHANGELOG.md`
-- Publish with `clawhub publish . ...`
+- Publish manually with `clawhub publish . ...` only after confirming the version and changelog text
 - After publish, run `clawhub inspect <slug> --files` and confirm the bundled wrapper and license files match what `SKILL.md` and the repo root document
 - After publish, run `clawhub inspect <slug>` and confirm the displayed marketplace license matches the intended license declared in `SKILL.md` and `LICENSE.txt`

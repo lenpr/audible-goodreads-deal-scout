@@ -26,3 +26,5 @@ Remaining improvement targets:
 - continue splitting `core.py`
 - keep real runtime smoke tests part of every release
 - keep marketplace claims conservative if live pages drift
+- keep distinguishing "member cash price below list" from confirmed limited-time sale language in user-facing reports
+- consider a future lightweight checkpoint/resume mode only if long Want-to-Read scans need more than explicit `--offset`/`--limit` batching

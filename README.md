@@ -46,8 +46,8 @@ clawhub login
 clawhub publish . \
   --slug audible-goodreads-deal-scout \
   --name "Audible Goodreads Deal Scout" \
-  --version 0.1.5 \
-  --changelog "Add optional headless authenticated Audible price lookup" \
+  --version 0.1.6 \
+  --changelog "Improve Want-to-Read scan progress, dedupe, and docs" \
   --tags latest
 ```
 
@@ -258,6 +258,8 @@ Progress output:
 - `--progress none` disables progress output.
 - `--progress-interval 5` controls the minimum seconds between item progress updates. Start, stop, and completion events are always emitted when progress is enabled.
 
+For long OpenClaw-agent runs, prefer `--progress json` plus `--output-json` and `--output-md`. Progress goes to stderr, while the report files stay stable and can be read after the command finishes or stops early.
+
 ### Optional authenticated Audible price lookup
 
 Anonymous Audible pages often hide cash prices. If you want the Want-to-Read scan to check member-visible pricing on a headless OpenClaw machine, you can create a local Audible auth file through an external-browser flow.
@@ -293,6 +295,8 @@ sh ./scripts/audible-goodreads-deal-scout.sh scan-want-to-read \
 You can also save the auth path in `config.json` as `audibleAuthPath`, or set it during scripted setup with `--audible-auth-path`.
 
 Authenticated scans usually spend one search request plus one authenticated price request for each matched Audible title. Use a higher `--max-requests` value than you would for anonymous scans. The authenticated price parser treats cash prices as the source of truth and ignores Audible credit prices such as `credit_price`.
+
+Authenticated `discounted` means Audible returned a member-visible cash price below its list price for the product. It does not always prove a limited-time sale; treat it as a useful price opportunity signal, not as checkout advice.
 
 You can test one known Audible ASIN first:
 
@@ -555,7 +559,7 @@ Useful checks:
 ```bash
 sh ./scripts/audible-goodreads-deal-scout.sh doctor --config-path .audible-goodreads-deal-scout/config.json
 sh ./scripts/audible-goodreads-deal-scout.sh show-csv-headers "/absolute/path/to/goodreads_library_export.csv"
-sh ./scripts/audible-goodreads-deal-scout.sh publish-audit --version 0.1.5 --tags latest
+sh ./scripts/audible-goodreads-deal-scout.sh publish-audit --version 0.1.6 --tags latest
 ```
 
 `doctor` checks the configured config, CSV, notes, auth file, cache directory, delivery settings, cron settings, local OpenClaw binary, and bundled shell wrapper. Add `--check-cron` when you want it to query live OpenClaw cron jobs.
@@ -587,7 +591,7 @@ Useful helper commands:
 sh ./scripts/audible-goodreads-deal-scout.sh doctor --config-path .audible-goodreads-deal-scout/config.json
 sh ./scripts/audible-goodreads-deal-scout.sh show-csv-headers "/absolute/path/to/goodreads_library_export.csv"
 sh ./scripts/audible-goodreads-deal-scout.sh measure-context --goodreads-csv "/absolute/path/to/goodreads_library_export.csv" --output /tmp/fit-context.json
-sh ./scripts/audible-goodreads-deal-scout.sh publish-audit --version 0.1.5
+sh ./scripts/audible-goodreads-deal-scout.sh publish-audit --version 0.1.6
 ```
 
 Finalize and deliver in one step:
@@ -623,7 +627,7 @@ sh ./scripts/audible-goodreads-deal-scout.sh run-and-deliver \
 Before publishing, run:
 
 ```bash
-sh ./scripts/audible-goodreads-deal-scout.sh publish-audit --version 0.1.5 --tags latest
+sh ./scripts/audible-goodreads-deal-scout.sh publish-audit --version 0.1.6 --tags latest
 ```
 
 ## Why this is worth publishing

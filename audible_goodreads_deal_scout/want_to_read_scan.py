@@ -184,6 +184,7 @@ def _dedupe_key(result: dict[str, Any]) -> str:
 
 
 def dedupe_ranked_results(results: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Keep one report row per Audible product after ranking has chosen the best row."""
     seen: dict[str, dict[str, Any]] = {}
     deduped: list[dict[str, Any]] = []
     suppressed: list[dict[str, Any]] = []
@@ -233,7 +234,17 @@ def count_results(results: list[dict[str, Any]], *, total_to_read: int, selected
     }
 
 
+def _request_budget_summary(max_requests: int, used: int) -> dict[str, int]:
+    return {"max": max_requests, "used": used, "remaining": max(0, max_requests - used)}
+
+
+def _progress_counts(results: list[dict[str, Any]], *, total_to_read: int, selected_rows: int) -> dict[str, Any]:
+    return count_results(results, total_to_read=total_to_read, selected_rows=selected_rows, scanned_rows=len(results))
+
+
 class ScanProgressReporter:
+    """Emit human or JSONL progress to stderr without mixing it into report output."""
+
     def __init__(self, *, mode: str = "none", interval_seconds: float = 5.0, stream: TextIO | None = None) -> None:
         self.mode = mode if mode in PROGRESS_MODES else "none"
         self.interval_seconds = max(0.0, interval_seconds)
@@ -476,6 +487,7 @@ def scan_want_to_read(
     *,
     fetcher: Callable[[str], tuple[str, str]] | None = None,
 ) -> tuple[dict[str, Any], str, int]:
+    """Run a stateless Want-to-Read scan and return structured JSON, Markdown, and an exit code."""
     config_path = Path(str(options.get("configPath") or default_config_path())).expanduser().resolve()
     try:
         resolved_config_path, file_config = load_config(config_path)
@@ -546,16 +558,41 @@ def scan_want_to_read(
     exit_code = 0
     warnings: list[str] = []
     reporter = ScanProgressReporter(mode=progress_mode, interval_seconds=progress_interval)
-    reporter.emit(
+    selected_count = len(selected)
+
+    def emit_progress(
+        event: str,
+        *,
+        scanned: int | None = None,
+        run_status: str,
+        run_reason_code: str,
+        counts_override: dict[str, Any] | None = None,
+        current_title: str | None = None,
+        last_status: str | None = None,
+        force: bool = False,
+    ) -> None:
+        scanned_count = len(results) if scanned is None else scanned
+        reporter.emit(
+            event,
+            scanned=scanned_count,
+            selected=selected_count,
+            total=total_to_read,
+            status=run_status,
+            reason_code=run_reason_code,
+            counts=counts_override
+            or _progress_counts(results, total_to_read=total_to_read, selected_rows=selected_count),
+            request_budget=_request_budget_summary(max_requests, client.live_requests),
+            cache=client.cache_summary(),
+            current_title=current_title,
+            last_status=last_status,
+            force=force,
+        )
+
+    emit_progress(
         "start",
         scanned=0,
-        selected=len(selected),
-        total=total_to_read,
-        status="running",
-        reason_code="scan_started",
-        counts=count_results([], total_to_read=total_to_read, selected_rows=len(selected), scanned_rows=0),
-        request_budget={"max": max_requests, "used": 0, "remaining": max_requests},
-        cache=client.cache_summary(),
+        run_status="running",
+        run_reason_code="scan_started",
         force=True,
     )
     for index, entry in enumerate(selected, start=1):
@@ -567,16 +604,10 @@ def scan_want_to_read(
             reason_code = "request_budget_exhausted"
             exit_code = 2
             warnings.append("Request budget exhausted before all selected rows were scanned.")
-            reporter.emit(
+            emit_progress(
                 "partial",
-                scanned=len(results),
-                selected=len(selected),
-                total=total_to_read,
-                status=status,
-                reason_code=reason_code,
-                counts=count_results(results, total_to_read=total_to_read, selected_rows=len(selected), scanned_rows=len(results)),
-                request_budget={"max": max_requests, "used": client.live_requests, "remaining": max(0, max_requests - client.live_requests)},
-                cache=client.cache_summary(),
+                run_status=status,
+                run_reason_code=reason_code,
                 current_title=current_title,
                 force=True,
             )
@@ -587,16 +618,10 @@ def scan_want_to_read(
             reason_code = "audible_block_circuit_open"
             exit_code = 3
             warnings.append("Audible block-like circuit breaker opened.")
-            reporter.emit(
+            emit_progress(
                 "aborted",
-                scanned=len(results),
-                selected=len(selected),
-                total=total_to_read,
-                status=status,
-                reason_code=reason_code,
-                counts=count_results(results, total_to_read=total_to_read, selected_rows=len(selected), scanned_rows=len(results)),
-                request_budget={"max": max_requests, "used": client.live_requests, "remaining": max(0, max_requests - client.live_requests)},
-                cache=client.cache_summary(),
+                run_status=status,
+                run_reason_code=reason_code,
                 current_title=current_title,
                 last_status=str(result.get("status") or ""),
                 force=True,
@@ -606,38 +631,27 @@ def scan_want_to_read(
             status = "partial"
             reason_code = "ordinary_fetch_failure_limit"
             warnings.append("Stopped early after repeated ordinary network failures.")
-            reporter.emit(
+            emit_progress(
                 "partial",
-                scanned=len(results),
-                selected=len(selected),
-                total=total_to_read,
-                status=status,
-                reason_code=reason_code,
-                counts=count_results(results, total_to_read=total_to_read, selected_rows=len(selected), scanned_rows=len(results)),
-                request_budget={"max": max_requests, "used": client.live_requests, "remaining": max(0, max_requests - client.live_requests)},
-                cache=client.cache_summary(),
+                run_status=status,
+                run_reason_code=reason_code,
                 current_title=current_title,
                 last_status=str(result.get("status") or ""),
                 force=True,
             )
             break
-        reporter.emit(
+        emit_progress(
             "item",
             scanned=index,
-            selected=len(selected),
-            total=total_to_read,
-            status="running",
-            reason_code="scan_running",
-            counts=count_results(results, total_to_read=total_to_read, selected_rows=len(selected), scanned_rows=len(results)),
-            request_budget={"max": max_requests, "used": client.live_requests, "remaining": max(0, max_requests - client.live_requests)},
-            cache=client.cache_summary(),
+            run_status="running",
+            run_reason_code="scan_running",
             current_title=current_title,
             last_status=str(result.get("status") or ""),
         )
 
     ranked_raw_results = rank_results(results)
     ranked_results, deduplication = dedupe_ranked_results(ranked_raw_results)
-    counts = count_results(ranked_results, total_to_read=total_to_read, selected_rows=len(selected), scanned_rows=len(results))
+    counts = count_results(ranked_results, total_to_read=total_to_read, selected_rows=selected_count, scanned_rows=len(results))
     counts["duplicateAudibleProducts"] = int(deduplication.get("suppressedDuplicateCount") or 0)
     report = {
         "schemaVersion": 1,
@@ -651,14 +665,10 @@ def scan_want_to_read(
             "seed": seed,
             "offset": offset,
             "limit": limit_value,
-            "selectedRows": len(selected),
+            "selectedRows": selected_count,
             "totalWantToRead": total_to_read,
         },
-        "requestBudget": {
-            "max": max_requests,
-            "used": client.live_requests,
-            "remaining": max(0, max_requests - client.live_requests),
-        },
+        "requestBudget": _request_budget_summary(max_requests, client.live_requests),
         "cache": client.cache_summary(),
         "deduplication": deduplication,
         "counts": counts,
@@ -672,16 +682,11 @@ def scan_want_to_read(
         },
         "exitCode": exit_code,
     }
-    reporter.emit(
+    emit_progress(
         "done" if status == "completed" else status,
-        scanned=len(results),
-        selected=len(selected),
-        total=total_to_read,
-        status=status,
-        reason_code=reason_code,
-        counts=counts,
-        request_budget=report["requestBudget"],
-        cache=report["cache"],
+        run_status=status,
+        run_reason_code=reason_code,
+        counts_override=counts,
         force=True,
     )
     markdown = render_markdown(
