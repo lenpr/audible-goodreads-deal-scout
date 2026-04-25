@@ -114,6 +114,8 @@ def build_parser() -> argparse.ArgumentParser:
     scan_parser.add_argument("--output-md")
     scan_parser.add_argument("--include-non-deals", action="store_true")
     scan_parser.add_argument("--verbose", action="store_true")
+    scan_parser.add_argument("--progress", choices=("plain", "json", "none"), default="plain")
+    scan_parser.add_argument("--progress-interval", type=float, default=5.0)
     scan_parser.add_argument("--refresh-cache", action="store_true")
     scan_parser.add_argument("--no-cache", action="store_true")
     scan_parser.add_argument("--offline-fixtures")
@@ -351,6 +353,8 @@ def command_scan_want_to_read(args: argparse.Namespace) -> int:
         "outputMd": args.output_md,
         "includeNonDeals": args.include_non_deals,
         "verbose": args.verbose,
+        "progress": args.progress,
+        "progressInterval": args.progress_interval,
         "refreshCache": args.refresh_cache,
         "noCache": args.no_cache,
         "offlineFixtures": args.offline_fixtures,

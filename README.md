@@ -203,7 +203,8 @@ If you configured a Goodreads CSV, you can also run a manual audit of books on y
 sh ./scripts/audible-goodreads-deal-scout.sh scan-want-to-read \
   --config-path .audible-goodreads-deal-scout/config.json \
   --limit 40 \
-  --offset 0
+  --offset 0 \
+  --progress plain
 ```
 
 This is intentionally an on-demand scan, not a scheduled monitor. It helps answer: "Which books I already want to read appear to have a visible Audible discount right now?"
@@ -215,7 +216,9 @@ Default behavior:
 - inspects the first three Audible result cards
 - fetches a product page only when the search card already shows plausible numeric discount evidence
 - prints compact Markdown to stdout
+- writes scan progress to stderr by default, so long runs can be monitored without corrupting Markdown/JSON output
 - keeps non-deals out of the default Markdown so the useful deals stay visible
+- suppresses duplicate Audible product matches in the final report while preserving scanned-row counts
 
 Useful batching pattern for larger shelves:
 
@@ -248,6 +251,12 @@ sh ./scripts/audible-goodreads-deal-scout.sh scan-want-to-read \
 The scan is deliberately conservative. If Audible hides cash pricing behind credits, membership language, or extra buying-choice UI, the result is marked as hidden or unknown instead of guessing. If a title or author match is ambiguous, it is marked for review instead of being treated as a deal.
 
 The Markdown report shows whether authenticated pricing was enabled, live request usage, cache hits/writes, and a suggested next `--offset` command when more selected Want-to-Read books remain.
+
+Progress output:
+- `--progress plain` writes human-readable progress lines to stderr. This is the default CLI behavior.
+- `--progress json` writes JSONL progress events to stderr for agents and log processors.
+- `--progress none` disables progress output.
+- `--progress-interval 5` controls the minimum seconds between item progress updates. Start, stop, and completion events are always emitted when progress is enabled.
 
 ### Optional authenticated Audible price lookup
 

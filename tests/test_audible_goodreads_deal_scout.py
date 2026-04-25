@@ -1273,6 +1273,78 @@ class WantToReadScanTests(unittest.TestCase):
         self.assertIn("--offset 1 --limit 1", markdown)
         self.assertIn("anonymous Audible search/card pricing only", markdown)
 
+    def test_want_to_read_scan_dedupes_repeated_audible_products(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            csv_path = tmp / "goodreads.csv"
+            write_rows(
+                csv_path,
+                [
+                    scan_row("1", "Deal Book", "Jane Story", "2026/04/05"),
+                    scan_row("2", "Deal Book", "Jane Story", "2026/04/04"),
+                ],
+            )
+            config_path = tmp / "config.json"
+            config_path.write_text(json.dumps({"audibleMarketplace": "us", "goodreadsCsvPath": str(csv_path)}), encoding="utf-8")
+            fixtures = tmp / "fixtures"
+            deal_url = "https://www.audible.com/pd/Deal-Book-Audiobook/B000000001"
+            write_want_to_read_fixtures(
+                fixtures,
+                search={
+                    "Deal Book Jane Story": f"<ol>{audible_search_card('Deal Book', 'Jane Story', 'B000000001', 'Regular Price: $20.00 Sale Price: $5.00')}</ol>",
+                },
+                product={deal_url: "<main><span>Regular Price: $20.00</span><span>$5.00</span></main>"},
+            )
+            report, markdown, rc = want_to_read_scan.scan_want_to_read(
+                {
+                    "configPath": str(config_path),
+                    "offlineFixtures": str(fixtures),
+                    "requestDelay": 0,
+                    "maxRequests": 10,
+                }
+            )
+        self.assertEqual(rc, 0)
+        self.assertEqual(report["counts"]["scannedRows"], 2)
+        self.assertEqual(report["counts"]["reportedResults"], 1)
+        self.assertEqual(report["counts"]["duplicateAudibleProducts"], 1)
+        self.assertEqual(len(report["results"]), 1)
+        self.assertEqual(report["deduplication"]["suppressedDuplicateCount"], 1)
+        self.assertIn("1 duplicate Audible product rows suppressed", markdown)
+
+    def test_want_to_read_scan_reports_json_progress_to_stderr(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            config_path = tmp / "config.json"
+            config_path.write_text(json.dumps({"audibleMarketplace": "us"}), encoding="utf-8")
+            fixtures = tmp / "fixtures"
+            write_want_to_read_fixtures(
+                fixtures,
+                search={
+                    "Progress Book Jane Story": f"<ol>{audible_search_card('Progress Book', 'Jane Story', 'B000000009')}</ol>",
+                },
+            )
+            stderr = io.StringIO()
+            with mock.patch("sys.stderr", stderr):
+                report, _markdown, rc = want_to_read_scan.scan_want_to_read(
+                    {
+                        "configPath": str(config_path),
+                        "title": "Progress Book",
+                        "author": "Jane Story",
+                        "offlineFixtures": str(fixtures),
+                        "requestDelay": 0,
+                        "maxRequests": 5,
+                        "progress": "json",
+                        "progressInterval": 0,
+                    }
+                )
+        self.assertEqual(rc, 0)
+        self.assertEqual(report["status"], "completed")
+        events = [json.loads(line) for line in stderr.getvalue().splitlines()]
+        self.assertEqual(events[0]["event"], "start")
+        self.assertEqual(events[-1]["event"], "done")
+        self.assertTrue(any(event["event"] == "item" for event in events))
+        self.assertEqual(events[-1]["scannedRows"], 1)
+
     def test_search_card_without_author_does_not_fetch_product_for_identity_only(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp = Path(tmp_dir)

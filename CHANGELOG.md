@@ -8,7 +8,7 @@
 - Add `doctor` and `audible-auth-status` commands for local readiness, auth expiry, and file-permission checks
 - Add structured CLI error payloads with token redaction for command failures
 - Ignore Audible credit prices when classifying authenticated cash discounts
-- Improve Want-to-Read Markdown reports with authenticated-pricing state, cache stats, and next-batch hints
+- Improve Want-to-Read scans with stderr progress reporting, duplicate Audible product suppression, authenticated-pricing state, cache stats, and next-batch hints
 - Clarify external-browser auth instructions and authenticated request budgeting
 - Move prepare-result artifact writing behind the runtime contract module boundary
 - Keep auth files out of published bundles and document that the auth file is sensitive local state

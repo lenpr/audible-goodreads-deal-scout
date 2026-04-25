@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import json
+import sys
+import time
 from collections import Counter
 from datetime import UTC, date, datetime
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, TextIO
 
 from .audible_auth import authenticated_product_pricing
 from .audible_catalog import AudibleCatalogClient, RequestBudgetExceeded, deterministic_shuffle
@@ -25,6 +27,7 @@ STATUS_ORDER = {
     "not_found": 6,
     "lookup_failed": 7,
 }
+PROGRESS_MODES = {"none", "plain", "json"}
 
 
 def _now_iso() -> str:
@@ -147,6 +150,16 @@ def _discount_value(result: dict[str, Any]) -> int:
         return 0
 
 
+def _date_rank_value(result: dict[str, Any]) -> int:
+    raw = str((result.get("goodreads") or {}).get("dateAdded") or "")
+    if len(raw) == 10 and raw[4] == "-" and raw[7] == "-":
+        try:
+            return date.fromisoformat(raw).toordinal()
+        except ValueError:
+            return 0
+    return 0
+
+
 def rank_results(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return sorted(
         results,
@@ -154,17 +167,60 @@ def rank_results(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
             STATUS_ORDER.get(str(item.get("status") or ""), 99),
             -_discount_value(item),
             -_rating_value(item),
-            str((item.get("goodreads") or {}).get("dateAdded") or ""),
+            -_date_rank_value(item),
         ),
     )
 
 
-def count_results(results: list[dict[str, Any]], *, total_to_read: int, selected_rows: int) -> dict[str, Any]:
+def _dedupe_key(result: dict[str, Any]) -> str:
+    audible = result.get("audible") if isinstance(result.get("audible"), dict) else {}
+    product_id = normalize_space(str(audible.get("productId") or ""))
+    if product_id:
+        return f"product:{product_id.casefold()}"
+    url = normalize_space(str(audible.get("url") or ""))
+    if url:
+        return f"url:{url}"
+    return ""
+
+
+def dedupe_ranked_results(results: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    seen: dict[str, dict[str, Any]] = {}
+    deduped: list[dict[str, Any]] = []
+    suppressed: list[dict[str, Any]] = []
+    for result in results:
+        key = _dedupe_key(result)
+        if not key:
+            deduped.append(result)
+            continue
+        kept = seen.get(key)
+        if kept is None:
+            seen[key] = result
+            deduped.append(result)
+            continue
+        suppressed.append(
+            {
+                "dedupeKey": key,
+                "keptRowKey": (kept.get("goodreads") or {}).get("rowKey"),
+                "suppressedRowKey": (result.get("goodreads") or {}).get("rowKey"),
+                "goodreadsTitle": (result.get("goodreads") or {}).get("title"),
+                "audibleTitle": (result.get("audible") or {}).get("title"),
+                "audibleProductId": (result.get("audible") or {}).get("productId"),
+            }
+        )
+    return deduped, {
+        "enabled": True,
+        "suppressedDuplicateCount": len(suppressed),
+        "suppressedDuplicates": suppressed,
+    }
+
+
+def count_results(results: list[dict[str, Any]], *, total_to_read: int, selected_rows: int, scanned_rows: int | None = None) -> dict[str, Any]:
     statuses = Counter(str(result.get("status") or "unknown") for result in results)
     return {
         "totalWantToRead": total_to_read,
         "selectedRows": selected_rows,
-        "scannedRows": len(results),
+        "scannedRows": len(results) if scanned_rows is None else scanned_rows,
+        "reportedResults": len(results),
         "discounted": statuses.get("discounted", 0),
         "availableNoDiscount": statuses.get("available_no_discount", 0),
         "includedWithMembership": statuses.get("included_with_membership", 0),
@@ -175,6 +231,83 @@ def count_results(results: list[dict[str, Any]], *, total_to_read: int, selected
         "lookupFailed": statuses.get("lookup_failed", 0),
         "byStatus": dict(sorted(statuses.items())),
     }
+
+
+class ScanProgressReporter:
+    def __init__(self, *, mode: str = "none", interval_seconds: float = 5.0, stream: TextIO | None = None) -> None:
+        self.mode = mode if mode in PROGRESS_MODES else "none"
+        self.interval_seconds = max(0.0, interval_seconds)
+        self.stream = stream or sys.stderr
+        self._last_emit = 0.0
+
+    def emit(
+        self,
+        event: str,
+        *,
+        scanned: int,
+        selected: int,
+        total: int,
+        status: str,
+        reason_code: str,
+        counts: dict[str, Any] | None = None,
+        request_budget: dict[str, Any] | None = None,
+        cache: dict[str, Any] | None = None,
+        current_title: str | None = None,
+        last_status: str | None = None,
+        force: bool = False,
+    ) -> None:
+        if self.mode == "none":
+            return
+        now = time.monotonic()
+        if not force and self.interval_seconds > 0 and now - self._last_emit < self.interval_seconds:
+            return
+        self._last_emit = now
+        counts = counts or {}
+        request_budget = request_budget or {}
+        cache = cache or {}
+        payload = {
+            "schemaVersion": 1,
+            "event": event,
+            "generatedAt": _now_iso(),
+            "status": status,
+            "reasonCode": reason_code,
+            "scannedRows": scanned,
+            "selectedRows": selected,
+            "totalWantToRead": total,
+            "percent": round((scanned / selected) * 100, 1) if selected else 100.0,
+            "currentTitle": current_title,
+            "lastStatus": last_status,
+            "counts": counts,
+            "requestBudget": request_budget,
+            "cache": cache,
+        }
+        if self.mode == "json":
+            self.stream.write(json.dumps(payload, sort_keys=True, ensure_ascii=False) + "\n")
+        else:
+            self.stream.write(self._plain_line(payload) + "\n")
+        self.stream.flush()
+
+    @staticmethod
+    def _plain_line(payload: dict[str, Any]) -> str:
+        selected = int(payload.get("selectedRows") or 0)
+        scanned = int(payload.get("scannedRows") or 0)
+        width = 24
+        filled = width if selected <= 0 else min(width, int(width * scanned / max(1, selected)))
+        bar = "#" * filled + "-" * (width - filled)
+        counts = payload.get("counts") or {}
+        budget = payload.get("requestBudget") or {}
+        cache = payload.get("cache") or {}
+        title = normalize_space(str(payload.get("currentTitle") or ""))[:60]
+        title_part = f' current="{title}"' if title else ""
+        return (
+            f"[{bar}] {scanned}/{selected} {payload.get('percent', 0):.1f}% "
+            f"{payload.get('event')} status={payload.get('status')} "
+            f"last={payload.get('lastStatus') or '-'} "
+            f"discounted={counts.get('discounted', 0)} review={counts.get('needsReview', 0)} "
+            f"not_found={counts.get('notFound', 0)} failed={counts.get('lookupFailed', 0)} "
+            f"requests={budget.get('used', 0)}/{budget.get('max', 0)} "
+            f"cache_hits={cache.get('hits', 0)}{title_part}"
+        )
 
 
 def _price_line(result: dict[str, Any]) -> str:
@@ -211,13 +344,15 @@ def render_markdown(report: dict[str, Any], *, include_non_deals: bool = False, 
         "",
         (
             f"Scanned {counts.get('scannedRows', 0)} of {counts.get('selectedRows', 0)} selected "
-            f"Want-to-Read books. Live requests: {budget.get('used', 0)}/{budget.get('max', 0)}."
+            f"Want-to-Read books. Reporting {counts.get('reportedResults', counts.get('scannedRows', 0))} unique results. "
+            f"Live requests: {budget.get('used', 0)}/{budget.get('max', 0)}."
         ),
         (
             "Pricing: "
             + ("authenticated Audible cash pricing enabled." if authenticated else "anonymous Audible search/card pricing only.")
         ),
         f"Cache: {cache.get('hits', 0)} hits, {cache.get('writes', 0)} writes.",
+        f"Deduplication: {counts.get('duplicateAudibleProducts', 0)} duplicate Audible product rows suppressed.",
         (
             "Summary: "
             f"{counts.get('discounted', 0)} discounted, "
@@ -356,6 +491,10 @@ def scan_want_to_read(
         limit_value = None if limit in (None, "") else int(limit)
         max_requests = int(config.get("maxRequests") or 40)
         request_delay = float(config.get("requestDelay") if config.get("requestDelay") is not None else 1.0)
+        progress_mode = normalize_space(str(config.get("progress") or "none")).lower() or "none"
+        if progress_mode not in PROGRESS_MODES:
+            raise ValueError("--progress must be one of: json, none, plain.")
+        progress_interval = float(config.get("progressInterval") if config.get("progressInterval") is not None else 5.0)
         min_discount_percent = int(config.get("minDiscountPercent") or 10)
         audible_auth_path = normalize_space(str(config.get("audibleAuthPath") or ""))
         title = normalize_space(str(config.get("title") or ""))
@@ -406,7 +545,21 @@ def scan_want_to_read(
     reason_code = "completed"
     exit_code = 0
     warnings: list[str] = []
-    for entry in selected:
+    reporter = ScanProgressReporter(mode=progress_mode, interval_seconds=progress_interval)
+    reporter.emit(
+        "start",
+        scanned=0,
+        selected=len(selected),
+        total=total_to_read,
+        status="running",
+        reason_code="scan_started",
+        counts=count_results([], total_to_read=total_to_read, selected_rows=len(selected), scanned_rows=0),
+        request_budget={"max": max_requests, "used": 0, "remaining": max_requests},
+        cache=client.cache_summary(),
+        force=True,
+    )
+    for index, entry in enumerate(selected, start=1):
+        current_title = normalize_space(str(entry.get("title") or ""))
         try:
             result = client.search_book(entry, min_discount_percent=min_discount_percent)
         except RequestBudgetExceeded:
@@ -414,6 +567,19 @@ def scan_want_to_read(
             reason_code = "request_budget_exhausted"
             exit_code = 2
             warnings.append("Request budget exhausted before all selected rows were scanned.")
+            reporter.emit(
+                "partial",
+                scanned=len(results),
+                selected=len(selected),
+                total=total_to_read,
+                status=status,
+                reason_code=reason_code,
+                counts=count_results(results, total_to_read=total_to_read, selected_rows=len(selected), scanned_rows=len(results)),
+                request_budget={"max": max_requests, "used": client.live_requests, "remaining": max(0, max_requests - client.live_requests)},
+                cache=client.cache_summary(),
+                current_title=current_title,
+                force=True,
+            )
             break
         results.append(result)
         if client.should_abort_for_blocks():
@@ -421,15 +587,58 @@ def scan_want_to_read(
             reason_code = "audible_block_circuit_open"
             exit_code = 3
             warnings.append("Audible block-like circuit breaker opened.")
+            reporter.emit(
+                "aborted",
+                scanned=len(results),
+                selected=len(selected),
+                total=total_to_read,
+                status=status,
+                reason_code=reason_code,
+                counts=count_results(results, total_to_read=total_to_read, selected_rows=len(selected), scanned_rows=len(results)),
+                request_budget={"max": max_requests, "used": client.live_requests, "remaining": max(0, max_requests - client.live_requests)},
+                cache=client.cache_summary(),
+                current_title=current_title,
+                last_status=str(result.get("status") or ""),
+                force=True,
+            )
             break
         if client.should_abort_for_ordinary_failures():
             status = "partial"
             reason_code = "ordinary_fetch_failure_limit"
             warnings.append("Stopped early after repeated ordinary network failures.")
+            reporter.emit(
+                "partial",
+                scanned=len(results),
+                selected=len(selected),
+                total=total_to_read,
+                status=status,
+                reason_code=reason_code,
+                counts=count_results(results, total_to_read=total_to_read, selected_rows=len(selected), scanned_rows=len(results)),
+                request_budget={"max": max_requests, "used": client.live_requests, "remaining": max(0, max_requests - client.live_requests)},
+                cache=client.cache_summary(),
+                current_title=current_title,
+                last_status=str(result.get("status") or ""),
+                force=True,
+            )
             break
+        reporter.emit(
+            "item",
+            scanned=index,
+            selected=len(selected),
+            total=total_to_read,
+            status="running",
+            reason_code="scan_running",
+            counts=count_results(results, total_to_read=total_to_read, selected_rows=len(selected), scanned_rows=len(results)),
+            request_budget={"max": max_requests, "used": client.live_requests, "remaining": max(0, max_requests - client.live_requests)},
+            cache=client.cache_summary(),
+            current_title=current_title,
+            last_status=str(result.get("status") or ""),
+        )
 
-    ranked_results = rank_results(results)
-    counts = count_results(ranked_results, total_to_read=total_to_read, selected_rows=len(selected))
+    ranked_raw_results = rank_results(results)
+    ranked_results, deduplication = dedupe_ranked_results(ranked_raw_results)
+    counts = count_results(ranked_results, total_to_read=total_to_read, selected_rows=len(selected), scanned_rows=len(results))
+    counts["duplicateAudibleProducts"] = int(deduplication.get("suppressedDuplicateCount") or 0)
     report = {
         "schemaVersion": 1,
         "status": status,
@@ -451,6 +660,7 @@ def scan_want_to_read(
             "remaining": max(0, max_requests - client.live_requests),
         },
         "cache": client.cache_summary(),
+        "deduplication": deduplication,
         "counts": counts,
         "warnings": warnings,
         "results": ranked_results,
@@ -462,6 +672,18 @@ def scan_want_to_read(
         },
         "exitCode": exit_code,
     }
+    reporter.emit(
+        "done" if status == "completed" else status,
+        scanned=len(results),
+        selected=len(selected),
+        total=total_to_read,
+        status=status,
+        reason_code=reason_code,
+        counts=counts,
+        request_budget=report["requestBudget"],
+        cache=report["cache"],
+        force=True,
+    )
     markdown = render_markdown(
         report,
         include_non_deals=bool(config.get("includeNonDeals")),

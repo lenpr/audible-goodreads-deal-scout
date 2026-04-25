@@ -111,14 +111,17 @@ sh "{baseDir}/scripts/audible-goodreads-deal-scout.sh" scan-want-to-read \
   [--limit 40] \
   [--offset 0] \
   [--scan-order newest] \
+  [--progress plain] \
   [--output-json "<json-path>"] \
   [--output-md "<markdown-path>"]
 ```
 
 Default behavior:
 - Print compact Markdown to stdout.
+- Write progress to stderr by default. Use `--progress json` for machine-readable JSONL progress or `--progress none` when silence is required.
 - Show visible numeric discounts first.
 - Suppress long non-deal lists unless `--include-non-deals` is requested.
+- Suppress duplicate Audible product matches in the final report while preserving scanned-row counts.
 - Use `--offset` and `--limit` for large Goodreads backlogs.
 
 Important caveat: Audible often hides cash prices behind credit or membership UI. Treat `price_hidden`, `price_unknown`, and `needs_review` as honest uncertainty, not as failures.
