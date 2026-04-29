@@ -346,6 +346,7 @@ class AudibleGoodreadsDealScoutTests(unittest.TestCase):
         self.assertEqual(rc, 0)
         payload = json.loads(output_text)
         self.assertTrue(payload["files"]["LICENSE.txt"])
+        self.assertTrue(payload["files"]["TRUST.md"])
         self.assertTrue(payload["files"]["scripts/audible-goodreads-deal-scout.sh"])
         self.assertTrue(payload["frontmatter"]["hasLicense"])
         self.assertTrue(payload["frontmatter"]["hasSkillKey"])

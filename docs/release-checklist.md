@@ -32,6 +32,8 @@ Use this before publishing a new version to ClawHub.
 
 - Confirm `publish-audit` reports no private identifiers
 - Confirm `.clawhubignore` excludes tests, docs, and local/generated state
+- Confirm `TRUST.md` is current and included in the published bundle
+- Confirm `SKILL.md` and `TRUST.md` clearly state that the skill reports opportunities only and does not buy, reserve, check out, redeem credits, manage subscriptions, or complete purchases
 - Confirm placeholder paths and example content stay generic and public-safe
 - Confirm `README.md`, `CHANGELOG.md`, and `config.example.json` still match the current behavior
 - Keep public wording specific to evaluation and delivery; avoid language that implies checkout, payments, or wallet behavior if the skill does not actually do those things
@@ -41,6 +43,9 @@ Use this before publishing a new version to ClawHub.
 
 - Bump version in your release command
 - Add the release note to `CHANGELOG.md`
+- Create a matching Git tag for the released commit, for example `git tag v0.1.10`
+- Push the commit and matching tag to GitHub before or immediately after publishing, for example `git push origin main --tags`
+- Create or update the GitHub release for the matching tag with the same release notes used on ClawHub
 - Publish manually with `clawhub publish . ...` only after confirming the version and changelog text
 - After publish, run `clawhub inspect <slug> --files` and confirm the bundled wrapper and license files match what `SKILL.md` and the repo root document
 - After publish, run `clawhub inspect <slug>` and confirm the displayed marketplace license matches the intended license declared in `SKILL.md` and `LICENSE.txt`

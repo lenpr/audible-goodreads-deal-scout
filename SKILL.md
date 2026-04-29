@@ -1,7 +1,7 @@
 ---
 name: audible-goodreads-deal-scout
 description: Evaluate an Audible daily promotion against Goodreads public score, optional Goodreads CSV shelves, optional freeform reading notes, optional delivery rules, and manual Want-to-Read discount scans. Use for first-run setup, deal checks, scheduled sends, and on-demand Goodreads backlog audits.
-license: MIT
+license: MIT-0
 metadata: {"openclaw":{"emoji":"🎧","skillKey":"audible-goodreads-deal-scout","homepage":"https://github.com/lenpr/audible-goodreads-deal-scout","category":"media","requires":{"anyBins":["python3","python"]}}}
 ---
 
@@ -28,6 +28,8 @@ Use this skill to:
 
 If you do not want personalization, the skill still works with public Goodreads ratings only.
 
+This skill reports opportunities only. It does not buy, reserve, check out, redeem credits, manage subscriptions, or complete purchases.
+
 ## Getting The Most Value
 
 The best setup uses:
@@ -36,6 +38,30 @@ The best setup uses:
 3. Optional Audible authentication when you want member-visible cash prices in Want-to-Read scans.
 
 With those pieces, the skill can track today's Audible promotion, compare it against your Goodreads library, explain personal fit, and scan your Want-to-Read shelf for Audible titles that look discounted or priced below list.
+
+## Trust And Data Access
+
+The skill reads only the files and services needed for its configured workflow.
+
+| Data or service | When used | Purpose |
+| --- | --- | --- |
+| Config file | Setup, daily checks, scans, delivery | Stores marketplace, thresholds, paths, privacy mode, and optional delivery settings |
+| Goodreads CSV | Only when configured | Detects `read`, `currently-reading`, and `to-read` shelves and uses ratings/reviews for fit |
+| Taste notes | Only when configured | Adds personal reading preferences for fit explanations |
+| Audible pages | Deal checks and Want-to-Read scans | Fetches daily promotions, search results, product pages, and visible pricing signals |
+| Audible auth file | Optional, explicit authenticated scans only | Checks member-visible cash prices for matched Audible titles |
+| Goodreads public pages | Runtime lookup and optional rating enrichment | Resolves public rating evidence and fills missing Want-to-Read average ratings |
+| OpenClaw CLI | Optional delivery, cron, and diagnostics | Sends configured messages, registers requested cron jobs, and checks local readiness |
+
+The local auth file is sensitive. Do not paste its contents into chat, commit it, or publish it.
+
+For a fuller trust and data-access summary, see `TRUST.md` in the published bundle or repository.
+
+## Optional Audible Authentication
+
+Audible authentication is optional and separate from the normal daily-deal workflow. The skill works without it, but anonymous Audible pages often hide cash prices behind credit or membership UI.
+
+Use authenticated price lookup only when the user explicitly wants member-visible cash prices in Want-to-Read scans. Do not ask for the user's Audible or Amazon password. Use `audible-auth-start`, `audible-auth-finish`, and `audible-auth-status` instead.
 
 ## Agent Runtime Instructions
 

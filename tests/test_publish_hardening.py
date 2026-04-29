@@ -41,6 +41,18 @@ class PublishHardeningTests(unittest.TestCase):
         self.assertIn("Open `Import and Export`", content)
         self.assertIn("If you do not use Goodreads", content)
         self.assertIn("A strong notes file sounds like you talking to a smart bookseller", content)
+        self.assertIn("TRUST.md", content)
+
+    def test_skill_and_trust_docs_disclose_data_access_and_no_purchase_behavior(self) -> None:
+        repo_root = Path(__file__).resolve().parents[1]
+        skill_text = (repo_root / "SKILL.md").read_text(encoding="utf-8")
+        trust_text = (repo_root / "TRUST.md").read_text(encoding="utf-8")
+        for content in (skill_text, trust_text):
+            self.assertIn("does not buy", content)
+            self.assertIn("Audible authentication is optional", content)
+        self.assertIn("Trust And Data Access", skill_text)
+        self.assertIn("What the skill may read", trust_text)
+        self.assertIn("license: MIT-0", skill_text)
 
     def test_certified_marketplaces_manifest_matches_supported_marketplaces(self) -> None:
         manifest = read_fixture_json("marketplaces", "certified_marketplaces.json")

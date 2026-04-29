@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.10
+
+- Add `TRUST.md` with data-access, network, optional auth, privacy-mode, and no-purchase behavior documentation
+- Surface data-access and no-purchase disclosures in `SKILL.md` for the ClawHub-visible page
+- Align `SKILL.md` license metadata with ClawHub's MIT-0 skill license
+- Update release guidance to create matching Git tags and GitHub releases for ClawHub versions
+
 ## 0.1.9
 
 - Add a human-facing ClawHub overview to `SKILL.md` so the marketplace README tab explains the skill before agent runtime instructions
