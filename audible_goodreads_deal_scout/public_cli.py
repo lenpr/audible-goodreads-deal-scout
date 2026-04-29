@@ -177,7 +177,7 @@ def build_parser() -> argparse.ArgumentParser:
         "publish-audit",
         help="Check that the skill bundle is shaped correctly for ClawHub publishing.",
     )
-    audit_parser.add_argument("--version", default="0.1.6")
+    audit_parser.add_argument("--version", default="0.1.7")
     audit_parser.add_argument("--tags", default="latest")
 
     finalize_parser = subparsers.add_parser(

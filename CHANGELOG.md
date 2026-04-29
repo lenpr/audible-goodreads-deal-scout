@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.6
+## 0.1.7
 
 - Add stderr progress reporting for long Want-to-Read scans, including JSONL mode for OpenClaw agents and log processors
 - Suppress duplicate Audible product matches in final Want-to-Read reports while preserving scanned-row counts and duplicate metadata in JSON

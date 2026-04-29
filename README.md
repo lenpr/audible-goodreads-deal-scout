@@ -66,7 +66,7 @@ clawhub login
 clawhub publish . \
   --slug audible-goodreads-deal-scout \
   --name "Audible Goodreads Deal Scout" \
-  --version 0.1.6 \
+  --version 0.1.7 \
   --changelog "Improve Want-to-Read scan progress, dedupe, and docs" \
   --tags latest
 ```
@@ -566,7 +566,7 @@ Useful checks:
 ```bash
 sh ./scripts/audible-goodreads-deal-scout.sh doctor --config-path .audible-goodreads-deal-scout/config.json
 sh ./scripts/audible-goodreads-deal-scout.sh show-csv-headers "/absolute/path/to/goodreads_library_export.csv"
-sh ./scripts/audible-goodreads-deal-scout.sh publish-audit --version 0.1.6 --tags latest
+sh ./scripts/audible-goodreads-deal-scout.sh publish-audit --version 0.1.7 --tags latest
 ```
 
 `doctor` checks the configured config, CSV, notes, auth file, cache directory, delivery settings, cron settings, local OpenClaw binary, and bundled shell wrapper. Add `--check-cron` when you want it to query live OpenClaw cron jobs.
@@ -598,7 +598,7 @@ Useful helper commands:
 sh ./scripts/audible-goodreads-deal-scout.sh doctor --config-path .audible-goodreads-deal-scout/config.json
 sh ./scripts/audible-goodreads-deal-scout.sh show-csv-headers "/absolute/path/to/goodreads_library_export.csv"
 sh ./scripts/audible-goodreads-deal-scout.sh measure-context --goodreads-csv "/absolute/path/to/goodreads_library_export.csv" --output /tmp/fit-context.json
-sh ./scripts/audible-goodreads-deal-scout.sh publish-audit --version 0.1.6
+sh ./scripts/audible-goodreads-deal-scout.sh publish-audit --version 0.1.7
 ```
 
 Finalize and deliver in one step:
@@ -635,7 +635,7 @@ sh ./scripts/audible-goodreads-deal-scout.sh run-and-deliver \
 Before publishing, run:
 
 ```bash
-sh ./scripts/audible-goodreads-deal-scout.sh publish-audit --version 0.1.6 --tags latest
+sh ./scripts/audible-goodreads-deal-scout.sh publish-audit --version 0.1.7 --tags latest
 ```
 
 ## Why this is worth publishing
