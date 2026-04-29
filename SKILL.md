@@ -288,5 +288,9 @@ Fallback lines:
 For scheduled runs, prep with `--invocation-mode scheduled`. If prep returns `suppress_duplicate_scheduled_run`, stop quietly. After a surfaced scheduled result, mark the deal as emitted with:
 
 ```bash
-sh "{baseDir}/scripts/audible-goodreads-deal-scout.sh" mark-emitted --state-file "<state-file>" --deal-key "<deal-key>"
+sh "{baseDir}/scripts/audible-goodreads-deal-scout.sh" mark-emitted \
+  --state-file "<state-file>" \
+  --prepare-json "<prepare-result-path>"
 ```
+
+Use the same current scheduled prepare artifact that was delivered. `run-and-deliver` refuses scheduled error prep results and stale scheduled artifacts whose `metadata.storeLocalDate` is not the current Audible marketplace date.

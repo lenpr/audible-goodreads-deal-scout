@@ -43,7 +43,7 @@ Use this before publishing a new version to ClawHub.
 
 - Bump version in your release command
 - Add the release note to `CHANGELOG.md`
-- Create a matching Git tag for the released commit, for example `git tag v0.1.10`
+- Create a matching Git tag for the released commit, for example `git tag v0.1.11`
 - Push the commit and matching tag to GitHub before or immediately after publishing, for example `git push origin main --tags`
 - Create or update the GitHub release for the matching tag with the same release notes used on ClawHub
 - Publish manually with `clawhub publish . ...` only after confirming the version and changelog text

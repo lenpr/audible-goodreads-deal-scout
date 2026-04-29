@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.11
+
+- Always write a fresh `artifacts/current/prepare-result.json` for ready, suppress, and error prepare outcomes so failed current-day prep cannot leave a stale deliverable artifact behind
+- Refuse scheduled `run-and-deliver` attempts for error prep results or stale scheduled artifacts whose `metadata.storeLocalDate` no longer matches the current Audible marketplace date
+- Make `mark-emitted` validate the delivered scheduled prepare artifact and mark only its current `metadata.dealKey`
+- Use browser-like Audible daily-promotion request headers, including `Accept-Language`, to reduce avoidable 503 responses
+
 ## 0.1.10
 
 - Add `TRUST.md` with data-access, network, optional auth, privacy-mode, and no-purchase behavior documentation

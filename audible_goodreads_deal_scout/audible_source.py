@@ -53,6 +53,7 @@ def fetch_text_with_final_url(url: str, *, retries: int = 2, backoff_seconds: fl
                     "User-Agent": HTTP_USER_AGENT,
                     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
                     "Accept-Encoding": "gzip, deflate",
+                    "Accept-Language": "en-US,en;q=0.9",
                 },
             )
             with urllib.request.urlopen(request, timeout=30) as response:

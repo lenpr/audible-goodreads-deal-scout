@@ -57,6 +57,7 @@ from .rendering import (
     render_final_message,
 )
 from .runtime_contract import (
+    attach_prepare_result_artifact,
     attach_runtime_contract_artifacts,
     build_runtime_input,
     build_runtime_prompt,
@@ -196,6 +197,59 @@ def make_audible_fetch_result(
             "shortCircuit": True,
         },
     )
+
+
+def attach_prepare_artifacts_for_status(
+    artifact_dir: Path,
+    prep_result: dict[str, Any],
+    *,
+    include_runtime_contract: bool = False,
+) -> dict[str, Any]:
+    if include_runtime_contract:
+        return attach_runtime_contract_artifacts(artifact_dir, prep_result)
+    return attach_prepare_result_artifact(artifact_dir, prep_result)
+
+
+def scheduled_prepare_rejection(prep_result: dict[str, Any]) -> dict[str, Any] | None:
+    metadata = dict(prep_result.get("metadata") or {})
+    invocation_mode = normalize_space(str(metadata.get("invocationMode") or "")).lower()
+    if invocation_mode != "scheduled":
+        return None
+    status = normalize_space(str(prep_result.get("status") or "")).lower()
+    if status == "error":
+        return {
+            "reasonCode": "error_scheduled_prepare_failed",
+            "message": "Scheduled delivery refused an error prepare result.",
+            "prepareReasonCode": prep_result.get("reasonCode"),
+            "prepareStatus": prep_result.get("status"),
+        }
+    marketplace = normalize_space(str(metadata.get("marketplace") or "")).lower() or "us"
+    try:
+        spec = validate_marketplace(marketplace)
+        current_store_date = logical_store_date(spec)
+    except Exception as exc:
+        return {
+            "reasonCode": "error_scheduled_prepare_date_unavailable",
+            "message": f"Scheduled delivery could not validate the current Audible marketplace date: {exc}",
+            "prepareReasonCode": prep_result.get("reasonCode"),
+            "prepareStatus": prep_result.get("status"),
+        }
+    artifact_store_date = normalize_space(str(metadata.get("storeLocalDate") or ""))
+    if artifact_store_date != current_store_date.isoformat():
+        return {
+            "reasonCode": "error_stale_scheduled_prepare_result",
+            "message": (
+                "Scheduled delivery refused a stale prepare artifact: "
+                f"artifact storeLocalDate is {artifact_store_date or 'missing'}, "
+                f"current {spec['label']} date is {current_store_date.isoformat()}."
+            ),
+            "prepareReasonCode": prep_result.get("reasonCode"),
+            "prepareStatus": prep_result.get("status"),
+            "artifactStoreLocalDate": artifact_store_date or None,
+            "currentStoreLocalDate": current_store_date.isoformat(),
+            "marketplace": spec["key"],
+        }
+    return None
 
 
 def fetch_audible_deal_with_retry(
@@ -544,17 +598,36 @@ def prepare_run(
     config_path = Path(options["configPath"]).resolve() if options.get("configPath") else None
     _, file_config = load_config(config_path)
     merged = {**file_config, **{key: value for key, value in options.items() if value is not None}}
+    artifact_dir = Path(str(merged.get("artifactDir") or default_artifact_dir())).expanduser()
+
+    def finish_prepare(
+        prep_result: dict[str, Any],
+        *,
+        include_runtime_contract: bool = False,
+    ) -> dict[str, Any]:
+        return attach_prepare_artifacts_for_status(
+            artifact_dir,
+            prep_result,
+            include_runtime_contract=include_runtime_contract,
+        )
 
     marketplace = str(merged.get("audibleMarketplace") or "us").lower()
     try:
         spec = validate_marketplace(marketplace)
     except ValueError as exc:
-        return make_prepare_result(
-            "error",
-            "error_unsupported_marketplace",
-            str(exc),
-            warnings=[],
-            metadata={"supportedMarketplaces": sorted(SUPPORTED_MARKETPLACES)},
+        return finish_prepare(
+            make_prepare_result(
+                "error",
+                "error_unsupported_marketplace",
+                str(exc),
+                warnings=[],
+                metadata={
+                    "marketplace": marketplace,
+                    "invocationMode": normalize_space(str(merged.get("invocationMode") or "manual")).lower()
+                    or "manual",
+                    "supportedMarketplaces": sorted(SUPPORTED_MARKETPLACES),
+                },
+            )
         )
 
     warnings: list[str] = []
@@ -563,17 +636,28 @@ def prepare_run(
     privacy_mode = normalize_space(str(merged.get("privacyMode") or "normal")).lower() or "normal"
     if privacy_mode not in SUPPORTED_PRIVACY_MODES:
         privacy_mode = "normal"
+    requested_url = normalize_space(str(merged.get("audibleDealUrl") or spec["dealUrl"]))
+    store_date = logical_store_date(spec, merged.get("today"))
 
     notes_file = normalize_space(str(merged.get("preferencesPath") or merged.get("notesFile") or ""))
     try:
         notes_text = resolve_notes_text(notes_file, str(merged.get("notesText") or ""))
     except FileNotFoundError as exc:
-        return make_prepare_result(
-            "error",
-            "error_missing_notes_file",
-            str(exc),
-            warnings=warnings,
-            metadata={"marketplace": spec["key"]},
+        return finish_prepare(
+            make_prepare_result(
+                "error",
+                "error_missing_notes_file",
+                str(exc),
+                warnings=warnings,
+                metadata={
+                    "marketplace": spec["key"],
+                    "marketplaceLabel": spec["label"],
+                    "storeLocalDate": store_date.isoformat(),
+                    "timezone": spec["timezone"],
+                    "invocationMode": invocation_mode,
+                    "configPath": str(config_path) if config_path else None,
+                },
+            )
         )
 
     notes_warning_chars = int(merged.get("notesWarningChars") or DEFAULT_NOTES_WARNING_CHARS)
@@ -590,17 +674,24 @@ def prepare_run(
     if merged.get("goodreadsCsvPath"):
         csv_path = Path(str(merged["goodreadsCsvPath"])).expanduser()
         if not csv_path.exists():
-            return make_prepare_result(
-                "error",
-                "error_missing_csv",
-                f"Goodreads CSV not found at {csv_path}.",
-                warnings=warnings,
-                metadata={"marketplace": spec["key"]},
+            return finish_prepare(
+                make_prepare_result(
+                    "error",
+                    "error_missing_csv",
+                    f"Goodreads CSV not found at {csv_path}.",
+                    warnings=warnings,
+                    metadata={
+                        "marketplace": spec["key"],
+                        "marketplaceLabel": spec["label"],
+                        "storeLocalDate": store_date.isoformat(),
+                        "timezone": spec["timezone"],
+                        "invocationMode": invocation_mode,
+                        "configPath": str(config_path) if config_path else None,
+                    },
+                )
             )
 
     mode, ready_reason = effective_mode(csv_path, notes_text)
-    requested_url = normalize_space(str(merged.get("audibleDealUrl") or spec["dealUrl"]))
-    store_date = logical_store_date(spec, merged.get("today"))
     audible_fetch_retries = int(merged.get("audibleFetchRetries") if merged.get("audibleFetchRetries") is not None else 2)
     audible_fetch_backoff_seconds = float(
         merged.get("audibleFetchBackoffSeconds") if merged.get("audibleFetchBackoffSeconds") is not None else 1.0
@@ -614,74 +705,89 @@ def prepare_run(
             warnings=warnings,
         )
     except NoActivePromotionError as exc:
-        return make_audible_fetch_result(
-            status="suppress",
-            reason_code="suppress_no_active_promotion",
-            message=str(exc),
-            warnings=warnings,
-            spec=spec,
-            requested_url=requested_url,
-            mode=mode,
-            privacy_mode=privacy_mode,
-            store_date=store_date,
+        return finish_prepare(
+            make_audible_fetch_result(
+                status="suppress",
+                reason_code="suppress_no_active_promotion",
+                message=str(exc),
+                warnings=warnings,
+                spec=spec,
+                requested_url=requested_url,
+                mode=mode,
+                privacy_mode=privacy_mode,
+                store_date=store_date,
+            )
         )
     except AudibleBlockedError as exc:
-        return make_audible_fetch_result(
-            status="error",
-            reason_code="error_audible_blocked",
-            message=str(exc),
-            warnings=warnings,
-            spec=spec,
-            requested_url=requested_url,
-            mode=mode,
-            privacy_mode=privacy_mode,
-            store_date=store_date,
+        return finish_prepare(
+            make_audible_fetch_result(
+                status="error",
+                reason_code="error_audible_blocked",
+                message=str(exc),
+                warnings=warnings,
+                spec=spec,
+                requested_url=requested_url,
+                mode=mode,
+                privacy_mode=privacy_mode,
+                store_date=store_date,
+            )
         )
     except AudibleFetchError as exc:
-        return make_audible_fetch_result(
-            status="error",
-            reason_code="error_audible_fetch_failed",
-            message=str(exc),
-            warnings=warnings,
-            spec=spec,
-            requested_url=requested_url,
-            mode=mode,
-            privacy_mode=privacy_mode,
-            store_date=store_date,
+        return finish_prepare(
+            make_audible_fetch_result(
+                status="error",
+                reason_code="error_audible_fetch_failed",
+                message=str(exc),
+                warnings=warnings,
+                spec=spec,
+                requested_url=requested_url,
+                mode=mode,
+                privacy_mode=privacy_mode,
+                store_date=store_date,
+            )
         )
     except AudibleParseError as exc:
-        return make_audible_fetch_result(
-            status="error",
-            reason_code="error_audible_parse_failed",
-            message=str(exc),
-            warnings=warnings,
-            spec=spec,
-            requested_url=requested_url,
-            mode=mode,
-            privacy_mode=privacy_mode,
-            store_date=store_date,
+        return finish_prepare(
+            make_audible_fetch_result(
+                status="error",
+                reason_code="error_audible_parse_failed",
+                message=str(exc),
+                warnings=warnings,
+                spec=spec,
+                requested_url=requested_url,
+                mode=mode,
+                privacy_mode=privacy_mode,
+                store_date=store_date,
+            )
         )
 
     state_path = Path(str(merged.get("stateFile") or "")).expanduser() if merged.get("stateFile") else None
     state = load_state(state_path)
     deal_key = build_deal_key(spec, candidate, store_date)
     if invocation_mode == "scheduled" and state_path and state.get("lastEmittedDealKey") == deal_key:
-        return {
-            "schemaVersion": 1,
-            "status": "suppress",
-            "reasonCode": "suppress_duplicate_scheduled_run",
-            "warnings": warnings,
-            "audible": candidate,
-            "personalData": {"mode": mode, "privacyMode": privacy_mode},
-            "artifacts": {},
-            "metadata": {
-                "marketplace": spec["key"],
-                "dealKey": deal_key,
-                "invocationMode": invocation_mode,
-                "shortCircuit": True,
-            },
-            "message": f"Scheduled run already emitted deal {deal_key}.",
-        }
+        return finish_prepare(
+            {
+                "schemaVersion": 1,
+                "status": "suppress",
+                "reasonCode": "suppress_duplicate_scheduled_run",
+                "warnings": warnings,
+                "audible": candidate,
+                "personalData": {"mode": mode, "privacyMode": privacy_mode},
+                "artifacts": {},
+                "metadata": {
+                    "marketplace": spec["key"],
+                    "marketplaceLabel": spec["label"],
+                    "storeLocalDate": store_date.isoformat(),
+                    "timezone": spec["timezone"],
+                    "dealKey": deal_key,
+                    "invocationMode": invocation_mode,
+                    "configPath": str(config_path) if config_path else None,
+                    "stateFile": str(state_path) if state_path else None,
+                    "shortCircuit": True,
+                },
+                "message": f"Scheduled run already emitted deal {deal_key}.",
+            }
+        )
 
     personal_rows: list[dict[str, Any]] = []
     csv_stats: dict[str, Any] = {}
@@ -691,29 +797,51 @@ def prepare_run(
         try:
             personal_rows, csv_stats = load_goodreads_csv(csv_path, csv_columns)
         except ValueError as exc:
-            return {
-                "schemaVersion": 1,
-                "status": "error",
-                "reasonCode": "error_csv_unreadable",
-                "warnings": warnings,
-                "audible": candidate,
-                "personalData": {"mode": mode, "privacyMode": privacy_mode},
-                "artifacts": {},
-                "metadata": {"marketplace": spec["key"], "dealKey": deal_key},
-                "message": str(exc),
-            }
+            return finish_prepare(
+                {
+                    "schemaVersion": 1,
+                    "status": "error",
+                    "reasonCode": "error_csv_unreadable",
+                    "warnings": warnings,
+                    "audible": candidate,
+                    "personalData": {"mode": mode, "privacyMode": privacy_mode},
+                    "artifacts": {},
+                    "metadata": {
+                        "marketplace": spec["key"],
+                        "marketplaceLabel": spec["label"],
+                        "storeLocalDate": store_date.isoformat(),
+                        "timezone": spec["timezone"],
+                        "dealKey": deal_key,
+                        "invocationMode": invocation_mode,
+                        "configPath": str(config_path) if config_path else None,
+                        "stateFile": str(state_path) if state_path else None,
+                    },
+                    "message": str(exc),
+                }
+            )
         except Exception as exc:
-            return {
-                "schemaVersion": 1,
-                "status": "error",
-                "reasonCode": "error_csv_unreadable",
-                "warnings": warnings,
-                "audible": candidate,
-                "personalData": {"mode": mode, "privacyMode": privacy_mode},
-                "artifacts": {},
-                "metadata": {"marketplace": spec["key"], "dealKey": deal_key},
-                "message": f"Could not read Goodreads CSV: {exc}",
-            }
+            return finish_prepare(
+                {
+                    "schemaVersion": 1,
+                    "status": "error",
+                    "reasonCode": "error_csv_unreadable",
+                    "warnings": warnings,
+                    "audible": candidate,
+                    "personalData": {"mode": mode, "privacyMode": privacy_mode},
+                    "artifacts": {},
+                    "metadata": {
+                        "marketplace": spec["key"],
+                        "marketplaceLabel": spec["label"],
+                        "storeLocalDate": store_date.isoformat(),
+                        "timezone": spec["timezone"],
+                        "dealKey": deal_key,
+                        "invocationMode": invocation_mode,
+                        "configPath": str(config_path) if config_path else None,
+                        "stateFile": str(state_path) if state_path else None,
+                    },
+                    "message": f"Could not read Goodreads CSV: {exc}",
+                }
+            )
         personal_match = classify_personal_match(candidate, personal_rows)
         freshness_days = export_age_days(csv_path, store_date)
         if freshness_days > int(merged.get("freshnessDays") or DEFAULT_FRESHNESS_DAYS):
@@ -734,82 +862,94 @@ def prepare_run(
                 )
 
     if personal_match.get("ambiguous"):
-        return {
-            "schemaVersion": 1,
-            "status": "error",
-            "reasonCode": "error_ambiguous_personal_match",
-            "warnings": warnings,
-            "audible": candidate,
-            "personalData": {
-                "mode": mode,
-                "privacyMode": privacy_mode,
-                "exactShelfMatch": "",
-                "matchedEntries": personal_match["matches"],
-            },
-            "artifacts": {},
-            "metadata": {
-                "marketplace": spec["key"],
-                "marketplaceLabel": spec["label"],
-                "storeLocalDate": store_date.isoformat(),
-                "timezone": spec["timezone"],
-                "dealKey": deal_key,
-                "invocationMode": invocation_mode,
-            },
-            "message": "Conflicting Goodreads CSV shelf states were found for the same book. Clean the CSV / Goodreads shelves for that title and rerun.",
-        }
+        return finish_prepare(
+            {
+                "schemaVersion": 1,
+                "status": "error",
+                "reasonCode": "error_ambiguous_personal_match",
+                "warnings": warnings,
+                "audible": candidate,
+                "personalData": {
+                    "mode": mode,
+                    "privacyMode": privacy_mode,
+                    "exactShelfMatch": "",
+                    "matchedEntries": personal_match["matches"],
+                },
+                "artifacts": {},
+                "metadata": {
+                    "marketplace": spec["key"],
+                    "marketplaceLabel": spec["label"],
+                    "storeLocalDate": store_date.isoformat(),
+                    "timezone": spec["timezone"],
+                    "dealKey": deal_key,
+                    "invocationMode": invocation_mode,
+                    "configPath": str(config_path) if config_path else None,
+                    "stateFile": str(state_path) if state_path else None,
+                },
+                "message": "Conflicting Goodreads CSV shelf states were found for the same book. Clean the CSV / Goodreads shelves for that title and rerun.",
+            }
+        )
 
     exact_shelf = str(personal_match.get("effectiveShelf") or "")
     if exact_shelf == "read":
-        return {
-            "schemaVersion": 1,
-            "status": "suppress",
-            "reasonCode": "suppress_already_read",
-            "warnings": warnings,
-            "audible": candidate,
-            "personalData": {
-                "mode": mode,
-                "privacyMode": privacy_mode,
-                "exactShelfMatch": exact_shelf,
-                "matchedEntries": personal_match["matches"],
-            },
-            "artifacts": {},
-            "metadata": {
-                "marketplace": spec["key"],
-                "marketplaceLabel": spec["label"],
-                "storeLocalDate": store_date.isoformat(),
-                "timezone": spec["timezone"],
-                "dealKey": deal_key,
-                "invocationMode": invocation_mode,
-                "shortCircuit": True,
-            },
-            "message": "Your Goodreads CSV already marks this book as read.",
-        }
+        return finish_prepare(
+            {
+                "schemaVersion": 1,
+                "status": "suppress",
+                "reasonCode": "suppress_already_read",
+                "warnings": warnings,
+                "audible": candidate,
+                "personalData": {
+                    "mode": mode,
+                    "privacyMode": privacy_mode,
+                    "exactShelfMatch": exact_shelf,
+                    "matchedEntries": personal_match["matches"],
+                },
+                "artifacts": {},
+                "metadata": {
+                    "marketplace": spec["key"],
+                    "marketplaceLabel": spec["label"],
+                    "storeLocalDate": store_date.isoformat(),
+                    "timezone": spec["timezone"],
+                    "dealKey": deal_key,
+                    "invocationMode": invocation_mode,
+                    "configPath": str(config_path) if config_path else None,
+                    "stateFile": str(state_path) if state_path else None,
+                    "shortCircuit": True,
+                },
+                "message": "Your Goodreads CSV already marks this book as read.",
+            }
+        )
 
     if exact_shelf == "currently-reading":
-        return {
-            "schemaVersion": 1,
-            "status": "suppress",
-            "reasonCode": "suppress_currently_reading",
-            "warnings": warnings,
-            "audible": candidate,
-            "personalData": {
-                "mode": mode,
-                "privacyMode": privacy_mode,
-                "exactShelfMatch": exact_shelf,
-                "matchedEntries": personal_match["matches"],
-            },
-            "artifacts": {},
-            "metadata": {
-                "marketplace": spec["key"],
-                "marketplaceLabel": spec["label"],
-                "storeLocalDate": store_date.isoformat(),
-                "timezone": spec["timezone"],
-                "dealKey": deal_key,
-                "invocationMode": invocation_mode,
-                "shortCircuit": True,
-            },
-            "message": "Your Goodreads CSV already marks this book as currently-reading.",
-        }
+        return finish_prepare(
+            {
+                "schemaVersion": 1,
+                "status": "suppress",
+                "reasonCode": "suppress_currently_reading",
+                "warnings": warnings,
+                "audible": candidate,
+                "personalData": {
+                    "mode": mode,
+                    "privacyMode": privacy_mode,
+                    "exactShelfMatch": exact_shelf,
+                    "matchedEntries": personal_match["matches"],
+                },
+                "artifacts": {},
+                "metadata": {
+                    "marketplace": spec["key"],
+                    "marketplaceLabel": spec["label"],
+                    "storeLocalDate": store_date.isoformat(),
+                    "timezone": spec["timezone"],
+                    "dealKey": deal_key,
+                    "invocationMode": invocation_mode,
+                    "configPath": str(config_path) if config_path else None,
+                    "stateFile": str(state_path) if state_path else None,
+                    "shortCircuit": True,
+                },
+                "message": "Your Goodreads CSV already marks this book as currently-reading.",
+            }
+        )
 
     rated_or_reviewed_entries = [
         row
@@ -839,7 +979,6 @@ def prepare_run(
         }
     )
 
-    artifact_dir = Path(str(merged.get("artifactDir") or default_artifact_dir())).expanduser()
     allow_model_personalization = privacy_mode != "minimal" and bool(notes_text or rated_or_reviewed_entries)
     personal_data = {
         "mode": mode,
@@ -893,7 +1032,7 @@ def prepare_run(
         },
         "message": "Preparation complete. The skill runtime can now resolve Goodreads public score and write the final recommendation.",
     }
-    return attach_runtime_contract_artifacts(artifact_dir, result)
+    return finish_prepare(result, include_runtime_contract=True)
 
 
 def mark_emitted(state_file: Path, deal_key: str, *, stale_warning_date: str | None = None) -> dict[str, Any]:
@@ -903,6 +1042,31 @@ def mark_emitted(state_file: Path, deal_key: str, *, stale_warning_date: str | N
         state["lastStaleWarningDate"] = stale_warning_date
     save_state(state_file, state)
     return {"ok": True, "stateFile": str(state_file), "dealKey": deal_key, "staleWarningDate": stale_warning_date}
+
+
+def mark_emitted_from_prepare(
+    state_file: Path,
+    prep_result: dict[str, Any],
+    *,
+    expected_deal_key: str | None = None,
+    stale_warning_date: str | None = None,
+) -> dict[str, Any]:
+    metadata = dict(prep_result.get("metadata") or {})
+    invocation_mode = normalize_space(str(metadata.get("invocationMode") or "")).lower()
+    if invocation_mode != "scheduled":
+        raise ValueError("mark-emitted requires a scheduled prepare artifact.")
+    rejection = scheduled_prepare_rejection(prep_result)
+    if rejection:
+        raise ValueError(str(rejection.get("message") or rejection.get("reasonCode") or "prepare artifact rejected"))
+    deal_key = normalize_space(str(metadata.get("dealKey") or ""))
+    if not deal_key:
+        raise ValueError("mark-emitted requires metadata.dealKey in the prepare artifact.")
+    normalized_expected = normalize_space(str(expected_deal_key or ""))
+    if normalized_expected and normalized_expected != deal_key:
+        raise ValueError(
+            f"mark-emitted refused deal key {normalized_expected}; current prepare artifact contains {deal_key}."
+        )
+    return mark_emitted(state_file, deal_key, stale_warning_date=stale_warning_date)
 
 
 def show_csv_headers(export_path: Path) -> dict[str, Any]:

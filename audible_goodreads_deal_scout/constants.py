@@ -4,7 +4,10 @@ import re
 
 
 MIN_PYTHON = (3, 9)
-HTTP_USER_AGENT = "OpenClaw Audible Goodreads Deal Scout/1.0"
+HTTP_USER_AGENT = (
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
+)
 DEFAULT_THRESHOLD = 3.8
 DEFAULT_FRESHNESS_DAYS = 180
 DEFAULT_NOTES_WARNING_CHARS = 50_000

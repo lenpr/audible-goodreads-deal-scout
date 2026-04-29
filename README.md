@@ -70,8 +70,8 @@ clawhub login
 clawhub publish . \
   --slug audible-goodreads-deal-scout \
   --name "Audible Goodreads Deal Scout" \
-  --version 0.1.10 \
-  --changelog "Add trust and data-access documentation, no-purchase disclosures, and release audit guidance." \
+  --version 0.1.11 \
+  --changelog "Prevent stale scheduled delivery artifacts after failed prep and harden Audible daily-promotion fetches." \
   --tags latest
 ```
 
@@ -511,8 +511,7 @@ sh ./scripts/audible-goodreads-deal-scout.sh prepare \
   --config-path .audible-goodreads-deal-scout/config.json
 ```
 
-That writes the working artifacts into `.audible-goodreads-deal-scout/artifacts/current/`, including:
-- `prepare-result.json`
+That always writes the current prep result to `.audible-goodreads-deal-scout/artifacts/current/prepare-result.json`, including error or suppress outcomes. Ready outcomes also include:
 - `runtime-input.json`
 - `runtime-prompt.md`
 - `runtime-output-schema.json`
@@ -563,6 +562,7 @@ Three issues cause most confusing runs:
 - Wrong notes path: if `notesFile` or `preferencesPath` points at a missing file, the prep step now returns `error_missing_notes_file` instead of silently continuing.
 - Wrong CSV header override: `--csv-column role=Header` must match the Goodreads export header exactly. If you are unsure, run `show-csv-headers` first.
 - Stale Goodreads export: if the CSV is old, the skill can still run, but read status, shelf state, and fit evidence may lag behind your actual library.
+- Stale scheduled artifact: scheduled `run-and-deliver` refuses error prep results and stale `prepare-result.json` files whose `metadata.storeLocalDate` no longer matches the current Audible marketplace date.
 - Transient Audible daily-deal pages: the prep step retries transient fetch failures and temporary no-active-promotion parses before returning a suppression or error.
 
 Useful checks:
@@ -570,7 +570,7 @@ Useful checks:
 ```bash
 sh ./scripts/audible-goodreads-deal-scout.sh doctor --config-path .audible-goodreads-deal-scout/config.json
 sh ./scripts/audible-goodreads-deal-scout.sh show-csv-headers "/absolute/path/to/goodreads_library_export.csv"
-sh ./scripts/audible-goodreads-deal-scout.sh publish-audit --version 0.1.10 --tags latest
+sh ./scripts/audible-goodreads-deal-scout.sh publish-audit --version 0.1.11 --tags latest
 ```
 
 `doctor` checks the configured config, CSV, notes, auth file, cache directory, delivery settings, cron settings, local OpenClaw binary, and bundled shell wrapper. Add `--check-cron` when you want it to query live OpenClaw cron jobs.
@@ -602,7 +602,7 @@ Useful helper commands:
 sh ./scripts/audible-goodreads-deal-scout.sh doctor --config-path .audible-goodreads-deal-scout/config.json
 sh ./scripts/audible-goodreads-deal-scout.sh show-csv-headers "/absolute/path/to/goodreads_library_export.csv"
 sh ./scripts/audible-goodreads-deal-scout.sh measure-context --goodreads-csv "/absolute/path/to/goodreads_library_export.csv" --output /tmp/fit-context.json
-sh ./scripts/audible-goodreads-deal-scout.sh publish-audit --version 0.1.10
+sh ./scripts/audible-goodreads-deal-scout.sh publish-audit --version 0.1.11
 ```
 
 Finalize and deliver in one step:
@@ -640,10 +640,10 @@ sh ./scripts/audible-goodreads-deal-scout.sh run-and-deliver \
 Before publishing, run:
 
 ```bash
-sh ./scripts/audible-goodreads-deal-scout.sh publish-audit --version 0.1.10 --tags latest
+sh ./scripts/audible-goodreads-deal-scout.sh publish-audit --version 0.1.11 --tags latest
 ```
 
-For public auditability, create a matching Git tag and GitHub release for each ClawHub version, for example `v0.1.10`.
+For public auditability, create a matching Git tag and GitHub release for each ClawHub version, for example `v0.1.11`.
 
 ## Why this is worth publishing
 

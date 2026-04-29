@@ -170,14 +170,15 @@ def build_parser() -> argparse.ArgumentParser:
 
     mark_parser = subparsers.add_parser("mark-emitted", help="Record a scheduled run's emitted deal key after the skill finishes.")
     mark_parser.add_argument("--state-file", required=True)
-    mark_parser.add_argument("--deal-key", required=True)
+    mark_parser.add_argument("--prepare-json", required=True, help="Path to the scheduled prepare-result JSON that was delivered.")
+    mark_parser.add_argument("--deal-key", help="Optional safety check; must match metadata.dealKey in --prepare-json.")
     mark_parser.add_argument("--stale-warning-date")
 
     audit_parser = subparsers.add_parser(
         "publish-audit",
         help="Check that the skill bundle is shaped correctly for ClawHub publishing.",
     )
-    audit_parser.add_argument("--version", default="0.1.10")
+    audit_parser.add_argument("--version", default="0.1.11")
     audit_parser.add_argument("--tags", default="latest")
 
     finalize_parser = subparsers.add_parser(
@@ -418,11 +419,28 @@ def command_doctor(args: argparse.Namespace) -> int:
 
 
 def command_mark_emitted(args: argparse.Namespace) -> int:
-    result = core.mark_emitted(
-        Path(args.state_file).expanduser(),
-        args.deal_key,
-        stale_warning_date=args.stale_warning_date,
-    )
+    try:
+        result = core.mark_emitted_from_prepare(
+            Path(args.state_file).expanduser(),
+            load_json_input(args.prepare_json),
+            expected_deal_key=args.deal_key,
+            stale_warning_date=args.stale_warning_date,
+        )
+    except Exception as exc:
+        print(
+            json.dumps(
+                {
+                    "ok": False,
+                    "stateFile": args.state_file,
+                    "prepareJson": args.prepare_json,
+                    "error": str(exc),
+                },
+                indent=2,
+                sort_keys=True,
+                ensure_ascii=False,
+            )
+        )
+        return 1
     print(json.dumps(result, indent=2, sort_keys=True, ensure_ascii=False))
     return 0
 
@@ -538,6 +556,24 @@ def command_deliver(args: argparse.Namespace) -> int:
 
 def command_run_and_deliver(args: argparse.Namespace) -> int:
     prep_payload = load_json_input(args.prepare_json)
+    scheduled_rejection = core.scheduled_prepare_rejection(prep_payload)
+    if scheduled_rejection:
+        print(
+            json.dumps(
+                {
+                    "ok": False,
+                    "delivered": False,
+                    "reasonCode": scheduled_rejection["reasonCode"],
+                    "error": scheduled_rejection["message"],
+                    "prepareJson": args.prepare_json,
+                    "prepareResult": prep_payload,
+                },
+                indent=2,
+                sort_keys=True,
+                ensure_ascii=False,
+            )
+        )
+        return 1
     runtime_payload = load_json_input(args.runtime_output) if args.runtime_output else None
     final_result = core.finalize_skill_result(prep_payload, runtime_payload)
     _, configured_policy = core.resolve_delivery_policy(

@@ -8,12 +8,14 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from datetime import date
 from pathlib import Path
 from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from audible_goodreads_deal_scout import core, public_cli  # noqa: E402
+from audible_goodreads_deal_scout import audible_source  # noqa: E402
 from audible_goodreads_deal_scout import audible_auth  # noqa: E402
 from audible_goodreads_deal_scout import audible_catalog  # noqa: E402
 from audible_goodreads_deal_scout import diagnostics  # noqa: E402
@@ -83,6 +85,25 @@ AUDIBLE_HTML = """
 
 def fake_fetcher(_: str) -> tuple[str, str]:
     return AUDIBLE_HTML, "https://www.audible.com/pd/Signal-Fire-Audiobook/ABC1234567"
+
+
+class FakeHttpResponse:
+    def __init__(self, body: str, url: str) -> None:
+        self._body = body.encode("utf-8")
+        self._url = url
+        self.headers: dict[str, str] = {}
+
+    def __enter__(self) -> "FakeHttpResponse":
+        return self
+
+    def __exit__(self, *_: object) -> None:
+        return None
+
+    def read(self) -> bytes:
+        return self._body
+
+    def geturl(self) -> str:
+        return self._url
 
 
 def write_rows(path: Path, rows: list[dict[str, str]]) -> None:
@@ -184,6 +205,22 @@ def read_message_fixture(name: str) -> str:
 
 
 class AudibleGoodreadsDealScoutTests(unittest.TestCase):
+    def test_daily_promotion_fetch_uses_browser_like_headers(self) -> None:
+        seen_headers: dict[str, str] = {}
+
+        def fake_urlopen(request: object, timeout: int = 30) -> FakeHttpResponse:
+            del timeout
+            seen_headers.update({key.lower(): value for key, value in request.header_items()})  # type: ignore[attr-defined]
+            return FakeHttpResponse(AUDIBLE_HTML, "https://www.audible.com/pd/Signal-Fire-Audiobook/ABC1234567")
+
+        with mock.patch.object(audible_source.urllib.request, "urlopen", side_effect=fake_urlopen):
+            text, final_url = audible_source.fetch_text_with_final_url("https://www.audible.com/dailydeal", retries=0)
+
+        self.assertIn("Mozilla/5.0", seen_headers["user-agent"])
+        self.assertEqual(seen_headers["accept-language"], "en-US,en;q=0.9")
+        self.assertIn("Signal Fire", text)
+        self.assertEqual(final_url, "https://www.audible.com/pd/Signal-Fire-Audiobook/ABC1234567")
+
     def test_prepare_retries_transient_no_active_promotion(self) -> None:
         no_deal_html = AUDIBLE_HTML.replace(
             "Get today's Daily Deal before time runs out! $4.99 Deal ends @ 11:59PM PT.",
@@ -204,6 +241,67 @@ class AudibleGoodreadsDealScoutTests(unittest.TestCase):
         self.assertEqual(result["status"], "ready")
         self.assertEqual(calls["count"], 2)
         self.assertTrue(any("Retrying Audible daily promotion fetch" in warning for warning in result["warnings"]))
+
+    def test_prepare_error_overwrites_current_prepare_artifact(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            artifact_dir = tmp / "artifacts"
+            stale_path = artifact_dir / "prepare-result.json"
+            stale_path.parent.mkdir(parents=True)
+            stale_path.write_text(
+                json.dumps(
+                    {
+                        "status": "ready",
+                        "reasonCode": "ready_public",
+                        "metadata": {"storeLocalDate": "2026-04-27"},
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            def failing_fetcher(_: str) -> tuple[str, str]:
+                raise core.AudibleFetchError("503 Service Unavailable")
+
+            result = core.prepare_run(
+                {
+                    "artifactDir": str(artifact_dir),
+                    "audibleMarketplace": "us",
+                    "invocationMode": "scheduled",
+                    "today": "2026-04-29",
+                    "audibleFetchRetries": 0,
+                },
+                fetcher=failing_fetcher,
+            )
+            artifact_payload = json.loads(stale_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(result["status"], "error")
+        self.assertEqual(result["reasonCode"], "error_audible_fetch_failed")
+        self.assertEqual(artifact_payload["reasonCode"], "error_audible_fetch_failed")
+        self.assertEqual(artifact_payload["metadata"]["storeLocalDate"], "2026-04-29")
+
+    def test_prepare_suppression_overwrites_current_prepare_artifact(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            artifact_dir = tmp / "artifacts"
+            stale_path = artifact_dir / "prepare-result.json"
+            stale_path.parent.mkdir(parents=True)
+            stale_path.write_text(json.dumps({"status": "ready", "reasonCode": "ready_public"}), encoding="utf-8")
+            export_path = tmp / "goodreads.csv"
+            write_rows(export_path, [row(title="Signal Fire", author="Jane Story", shelf="read")])
+            result = core.prepare_run(
+                {
+                    "artifactDir": str(artifact_dir),
+                    "audibleMarketplace": "us",
+                    "goodreadsCsvPath": str(export_path),
+                    "today": "2026-04-29",
+                },
+                fetcher=fake_fetcher,
+            )
+            artifact_payload = json.loads(stale_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(result["status"], "suppress")
+        self.assertEqual(artifact_payload["reasonCode"], "suppress_already_read")
+        self.assertEqual(artifact_payload["metadata"]["storeLocalDate"], "2026-04-29")
 
     def test_setup_writes_config_and_preferences(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -1029,6 +1127,80 @@ class AudibleGoodreadsDealScoutTests(unittest.TestCase):
         self.assertTrue(payload["delivered"])
         self.assertEqual(payload["deliveryPlan"]["mode"], "summary")
 
+    def test_run_and_deliver_refuses_scheduled_error_prepare_result(self) -> None:
+        prepare = {
+            "schemaVersion": 1,
+            "status": "error",
+            "reasonCode": "error_audible_fetch_failed",
+            "message": "Audible fetch failed.",
+            "warnings": [],
+            "audible": {},
+            "personalData": {},
+            "artifacts": {},
+            "metadata": {
+                "marketplace": "us",
+                "marketplaceLabel": "Audible US",
+                "storeLocalDate": "2026-04-20",
+                "invocationMode": "scheduled",
+            },
+        }
+        args = mock.Mock(
+            prepare_json="-",
+            runtime_output=None,
+            config_path=None,
+            delivery_channel=None,
+            delivery_target=None,
+            delivery_policy="summary_on_non_match",
+            openclaw_bin="openclaw",
+            dry_run=False,
+        )
+        with mock.patch.object(public_cli, "load_json_input", side_effect=[prepare]), mock.patch.object(core, "deliver_message") as deliver_mock, mock.patch("sys.stdout", new_callable=mock.MagicMock()) as fake_stdout:
+            rc = public_cli.command_run_and_deliver(args)
+            output_text = "".join(call.args[0] for call in fake_stdout.write.call_args_list)
+
+        self.assertEqual(rc, 1)
+        deliver_mock.assert_not_called()
+        payload = json.loads(output_text)
+        self.assertFalse(payload["delivered"])
+        self.assertEqual(payload["reasonCode"], "error_scheduled_prepare_failed")
+
+    def test_run_and_deliver_refuses_stale_scheduled_prepare_result(self) -> None:
+        prepare = {
+            "schemaVersion": 1,
+            "status": "ready",
+            "reasonCode": "ready_public",
+            "message": "Ready.",
+            "warnings": [],
+            "audible": {"title": "Signal Fire", "author": "Jane Story"},
+            "personalData": {"mode": "public", "privacyMode": "normal"},
+            "artifacts": {},
+            "metadata": {
+                "marketplace": "us",
+                "marketplaceLabel": "Audible US",
+                "storeLocalDate": "2026-04-19",
+                "invocationMode": "scheduled",
+            },
+        }
+        args = mock.Mock(
+            prepare_json="-",
+            runtime_output=None,
+            config_path=None,
+            delivery_channel=None,
+            delivery_target=None,
+            delivery_policy="always_full",
+            openclaw_bin="openclaw",
+            dry_run=False,
+        )
+        with mock.patch.object(public_cli, "load_json_input", side_effect=[prepare]), mock.patch.object(core, "logical_store_date", return_value=date(2026, 4, 20)), mock.patch.object(core, "deliver_message") as deliver_mock, mock.patch("sys.stdout", new_callable=mock.MagicMock()) as fake_stdout:
+            rc = public_cli.command_run_and_deliver(args)
+            output_text = "".join(call.args[0] for call in fake_stdout.write.call_args_list)
+
+        self.assertEqual(rc, 1)
+        deliver_mock.assert_not_called()
+        payload = json.loads(output_text)
+        self.assertEqual(payload["reasonCode"], "error_stale_scheduled_prepare_result")
+        self.assertIn("2026-04-19", payload["error"])
+
     def test_run_and_deliver_reports_delivery_failure_cleanly(self) -> None:
         prepare = core.prepare_run({"audibleMarketplace": "us"}, fetcher=fake_fetcher)
         args = mock.Mock(
@@ -1049,6 +1221,85 @@ class AudibleGoodreadsDealScoutTests(unittest.TestCase):
         payload = json.loads(output_text)
         self.assertFalse(payload["ok"])
         self.assertIn("send failed", payload["error"])
+
+    def test_mark_emitted_uses_current_scheduled_prepare_artifact_deal_key(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            state_file = tmp / "state.json"
+            prepare_path = tmp / "prepare-result.json"
+            prepare_path.write_text(
+                json.dumps(
+                    {
+                        "schemaVersion": 1,
+                        "status": "ready",
+                        "reasonCode": "ready_public",
+                        "warnings": [],
+                        "audible": {"title": "Signal Fire", "author": "Jane Story"},
+                        "personalData": {},
+                        "artifacts": {"prepareResultPath": str(prepare_path)},
+                        "metadata": {
+                            "marketplace": "us",
+                            "storeLocalDate": "2026-04-20",
+                            "invocationMode": "scheduled",
+                            "dealKey": "us:2026-04-20:ABC1234567",
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            args = mock.Mock(
+                state_file=str(state_file),
+                prepare_json=str(prepare_path),
+                deal_key="us:2026-04-20:ABC1234567",
+                stale_warning_date=None,
+            )
+            with mock.patch.object(core, "logical_store_date", return_value=date(2026, 4, 20)), mock.patch("sys.stdout", new_callable=mock.MagicMock()) as fake_stdout:
+                rc = public_cli.command_mark_emitted(args)
+                output_text = "".join(call.args[0] for call in fake_stdout.write.call_args_list)
+            state = json.loads(state_file.read_text(encoding="utf-8"))
+
+        self.assertEqual(rc, 0)
+        self.assertEqual(state["lastEmittedDealKey"], "us:2026-04-20:ABC1234567")
+        self.assertEqual(json.loads(output_text)["dealKey"], "us:2026-04-20:ABC1234567")
+
+    def test_mark_emitted_rejects_mismatched_deal_key(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            state_file = tmp / "state.json"
+            prepare_path = tmp / "prepare-result.json"
+            prepare_path.write_text(
+                json.dumps(
+                    {
+                        "schemaVersion": 1,
+                        "status": "ready",
+                        "reasonCode": "ready_public",
+                        "warnings": [],
+                        "audible": {"title": "Signal Fire", "author": "Jane Story"},
+                        "personalData": {},
+                        "artifacts": {"prepareResultPath": str(prepare_path)},
+                        "metadata": {
+                            "marketplace": "us",
+                            "storeLocalDate": "2026-04-20",
+                            "invocationMode": "scheduled",
+                            "dealKey": "us:2026-04-20:ABC1234567",
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            args = mock.Mock(
+                state_file=str(state_file),
+                prepare_json=str(prepare_path),
+                deal_key="us:2026-04-27:STALE",
+                stale_warning_date=None,
+            )
+            with mock.patch.object(core, "logical_store_date", return_value=date(2026, 4, 20)), mock.patch("sys.stdout", new_callable=mock.MagicMock()) as fake_stdout:
+                rc = public_cli.command_mark_emitted(args)
+                output_text = "".join(call.args[0] for call in fake_stdout.write.call_args_list)
+
+        self.assertEqual(rc, 1)
+        self.assertFalse(state_file.exists())
+        self.assertIn("refused deal key", json.loads(output_text)["error"])
 
     def test_finalize_suppress_below_threshold(self) -> None:
         prep = core.prepare_run({"audibleMarketplace": "us"}, fetcher=fake_fetcher)
