@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.1.9
+
+- Add a human-facing ClawHub overview to `SKILL.md` so the marketplace README tab explains the skill before agent runtime instructions
+- Keep agent-facing operational instructions under a dedicated runtime section
+- Update release metadata defaults for the marketplace-rendering fix
+
+## 0.1.8
+
+- Refresh ClawHub README and release metadata
+
 ## 0.1.7
 
 - Add stderr progress reporting for long Want-to-Read scans, including JSONL mode for OpenClaw agents and log processors

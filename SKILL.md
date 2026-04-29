@@ -7,6 +7,38 @@ metadata: {"openclaw":{"emoji":"🎧","skillKey":"audible-goodreads-deal-scout",
 
 # Audible Goodreads Deal Scout
 
+Never miss an Audible deal for a book you actually want to read.
+
+Audible Goodreads Deal Scout is a **ClawHub / OpenClaw skill** that checks Audible promotions against Goodreads ratings, your Goodreads shelves, and optional reading-taste notes. It is built for people who want fewer random deal notifications and more "this is actually relevant to me" recommendations.
+
+The goal is not to buy more audiobooks. The goal is to notice the few Audible deals that match books you already care about.
+
+## What It Does
+
+Use this skill to:
+- check today's Audible daily deal and get a short recommendation
+- see whether the deal is already on your Goodreads Want-to-Read shelf
+- suppress books you already marked as read or currently reading
+- scan your Goodreads Want-to-Read shelf for Audible titles with visible discounts
+- rank discounted Want-to-Read matches by deal strength and Goodreads signal
+- create personalized recommendations from your Goodreads shelves, ratings, reviews, and taste notes
+- explain why a book may or may not fit your reading preferences, instead of only showing a generic score
+- optionally check member-visible Audible cash prices with a local Audible auth token
+- optionally deliver good matches to Telegram or another configured OpenClaw channel
+
+If you do not want personalization, the skill still works with public Goodreads ratings only.
+
+## Getting The Most Value
+
+The best setup uses:
+1. A Goodreads library CSV from the official Goodreads `Import and Export` page.
+2. Short taste notes about books, authors, genres, pacing, and themes you like or avoid.
+3. Optional Audible authentication when you want member-visible cash prices in Want-to-Read scans.
+
+With those pieces, the skill can track today's Audible promotion, compare it against your Goodreads library, explain personal fit, and scan your Want-to-Read shelf for Audible titles that look discounted or priced below list.
+
+## Agent Runtime Instructions
+
 Use this skill when the user wants to:
 - set up a reusable Audible deal workflow
 - check the current Audible daily promotion
