@@ -1,31 +1,51 @@
 # Audible Goodreads Deal Scout
 
-`audible-goodreads-deal-scout` is a **ClawHub / OpenClaw skill** for evaluating Audible daily promotions and manually auditing your Goodreads Want-to-Read shelf for visible Audible discounts.
+Never miss an Audible deal for a book you actually want to read.
+
+Audible Goodreads Deal Scout is a **ClawHub / OpenClaw skill** that checks Audible promotions against Goodreads ratings, your Goodreads shelves, and optional reading-taste notes. It is built for people who want fewer random deal notifications and more "this is actually relevant to me" recommendations.
+
+The goal is not to buy more audiobooks. The goal is to notice the few Audible deals that match books you already care about.
+
+## Use This Skill To
+
+Use this skill to:
+
+- Check today's Audible daily deal and get a short recommendation.
+- See whether the deal is already on your Goodreads Want-to-Read shelf.
+- Suppress books you already marked as read or currently reading.
+- Scan your Goodreads Want-to-Read shelf for Audible titles with visible discounts.
+- Rank discounted Want-to-Read matches by deal strength and Goodreads signal.
+- Create highly personalized recommendations from your Goodreads shelves, ratings, reviews, and taste notes.
+- Explain why a book may or may not fit your reading preferences, instead of only showing a generic score.
+- Optionally check member-visible Audible cash prices with a local Audible auth token.
+- Optionally deliver good matches to Telegram or another configured OpenClaw channel.
+
+If you do not want personalization, the skill still works with public Goodreads ratings only.
+
+## How To Get The Most Value
+
+The skill works with public data only, but it gets much better when you give it a little personal context.
+
+The best setup is:
+
+1. Export your Goodreads library CSV.
+   Use the official Goodreads library exporter from Goodreads' `Import and Export` page. This lets the skill know what you already read, what you are currently reading, and what is on your Want-to-Read shelf.
+2. Add short taste notes.
+   A few paragraphs are enough. You can write them yourself, dictate them quickly, or ask an AI to draft taste notes from your favorite books, disliked books, preferred genres, and reading habits. These notes help the skill explain whether a deal actually fits you, not just whether it is popular.
+3. Optionally add Audible authentication for member prices.
+   Anonymous Audible pages often hide cash prices or show credit-based buying options. If you provide a local Audible auth token, the skill can check member-visible cash prices for matched titles and produce a more useful Want-to-Read discount report.
+
+With all three pieces, the skill can help keep track of:
+
+- today's Audible promotion
+- whether the book is already in your Goodreads library
+- whether it is on your Want-to-Read shelf
+- whether it looks like a good fit for your taste
+- which Want-to-Read books are available on Audible
+- which matched titles appear discounted or priced below list
+- which deals are worth looking at first
 
 If you are looking at this repository on GitHub, you are looking at the **source for a publishable ClawHub skill**, not a generic Python app or a standalone website.
-
-Its job is simple: help you decide whether an Audible promotion is actually worth your attention.
-
-It is built for people who do **not** want raw promo noise. Instead of only showing the featured title, the skill combines:
-- the public Goodreads rating
-- your Goodreads shelves, if you provide a CSV
-- your own reading preferences, if you provide notes
-- a delivery policy that decides what should be sent and what should be skipped quietly
-
-## What this skill is for
-
-Use this skill if you want OpenClaw to:
-- check the current Audible daily promotion
-- scan your Goodreads Want-to-Read shelf for visible Audible US discounts
-- decide whether the book clears a quality bar
-- notice if you already read it or already saved it
-- write a short fit paragraph about why it may work for you
-- optionally send the result to a configured channel such as Telegram
-
-This repo is intended to be:
-- developed on GitHub
-- published on ClawHub
-- installed into OpenClaw as a reusable skill
 
 If you want to re-implement the workflow without using the shipped skill directly, see [PROMPT_REQUEST.md](PROMPT_REQUEST.md). It captures the intention, scope, design guardrails, edge cases, and example prompt in one place.
 
@@ -50,24 +70,6 @@ clawhub publish . \
   --changelog "Improve Want-to-Read scan progress, dedupe, and docs" \
   --tags latest
 ```
-
-## Start here
-
-Use this skill if you want:
-- a daily Audible promotion filter instead of a raw daily promotion feed
-- a manual Want-to-Read shelf scan for currently visible Audible US discounts
-- a way to suppress books you already read
-- a way to fast-track books you already saved on Goodreads
-- a short fit paragraph that explains why a book may work for you, and what may not
-
-You get the most value from it if you provide both:
-- a Goodreads library export CSV
-- a short notes file about your taste
-
-You can still use it without both:
-- no CSV, no notes: public Goodreads signal only
-- notes only: public Goodreads signal plus a notes-driven fit paragraph
-- CSV only: shelf logic plus fit from your Goodreads history
 
 ## 5-minute setup
 
@@ -153,14 +155,6 @@ If you do not have Goodreads, the best setup is:
 - a thoughtful notes file
 - the default public Goodreads check
 - `deliveryPolicy: positive_only`
-
-## Which mode should I use?
-
-| Mode | What you provide | What you get |
-| --- | --- | --- |
-| `public` | nothing personal | Audible + Goodreads public score only |
-| `notes` | a notes file or pasted text | Goodreads public score plus notes-driven fit |
-| `full` | Goodreads CSV, optionally notes | shelf-aware suppression/recommendation plus richer fit |
 
 ## How the recommendation works
 
