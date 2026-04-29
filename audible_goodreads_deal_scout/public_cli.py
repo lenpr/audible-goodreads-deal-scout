@@ -14,8 +14,12 @@ from .shared import write_json_atomic
 from .want_to_read_scan import report_json, scan_want_to_read
 
 REQUIRED_PUBLISH_IGNORE_PATTERNS = (
+    ".git/",
     ".audible-goodreads-deal-scout/",
     "__pycache__/",
+    "*.pyc",
+    ".DS_Store",
+    "audible-auth*.json",
     ".pytest_cache/",
     "tests/",
     "docs/",
@@ -486,6 +490,7 @@ def command_publish_audit(args: argparse.Namespace) -> int:
         },
         "publishIgnore": {
             "exists": publish_ignore_path.exists(),
+            "requiredExclusions": list(REQUIRED_PUBLISH_IGNORE_PATTERNS),
             "requiredExclusionsPresent": publish_ignore_path.exists() and not missing_publish_ignore_patterns,
             "missingExclusions": missing_publish_ignore_patterns,
         },

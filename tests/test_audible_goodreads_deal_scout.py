@@ -231,6 +231,13 @@ class AudibleGoodreadsDealScoutTests(unittest.TestCase):
             self.assertEqual(payload["deliveryChannel"], "telegram")
             self.assertEqual(payload["deliveryTarget"], "-1000000000000")
             self.assertEqual(payload["deliveryPolicy"], "summary_on_non_match")
+            next_steps = {step["label"]: step for step in result["nextSteps"]}
+            self.assertIn("doctor", next_steps)
+            self.assertIn("check-daily-deal", next_steps)
+            self.assertIn("scan-want-to-read", next_steps)
+            self.assertIn("optional-audible-auth", next_steps)
+            self.assertIn(str(tmp / "config.json"), next_steps["doctor"]["command"])
+            self.assertEqual(next_steps["scan-want-to-read"]["argv"][-2:], ["--limit", "40"])
 
     def test_setup_returns_manual_instructions_when_write_fails(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -346,6 +353,10 @@ class AudibleGoodreadsDealScoutTests(unittest.TestCase):
         self.assertTrue(payload["publishIgnore"]["exists"])
         self.assertTrue(payload["publishIgnore"]["requiredExclusionsPresent"])
         self.assertEqual(payload["publishIgnore"]["missingExclusions"], [])
+        required_exclusions = set(payload["publishIgnore"]["requiredExclusions"])
+        self.assertIn("audible-auth*.json", required_exclusions)
+        self.assertIn(".DS_Store", required_exclusions)
+        self.assertIn(".git/", required_exclusions)
         self.assertTrue(payload["privacyAudit"]["ok"])
         self.assertIn("clawhub publish", payload["recommendedPublishCommand"])
         self.assertTrue(payload["recommendedPublishCommand"].startswith("clawhub publish . "))

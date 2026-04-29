@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shlex
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -11,6 +12,7 @@ from .settings import (
     default_storage_dir,
     load_config,
     resolve_notes_text,
+    skill_root,
     validate_marketplace,
     validate_timezone,
 )
@@ -135,6 +137,69 @@ def register_cron_job(
     return {"ok": True, "created": True, "job": payload.get("job"), "command": command}
 
 
+def _next_step(label: str, description: str, argv: list[str], *, optional: bool = False) -> dict[str, Any]:
+    return {
+        "label": label,
+        "description": description,
+        "optional": optional,
+        "argv": argv,
+        "command": shlex.join(argv),
+    }
+
+
+def build_setup_next_steps(
+    *,
+    config_path: Path,
+    storage_dir: Path,
+    spec: dict[str, str],
+    config_payload: dict[str, Any],
+) -> list[dict[str, Any]]:
+    wrapper = str(skill_root() / "scripts" / "audible-goodreads-deal-scout.sh")
+    launcher = ["sh", wrapper]
+    config_arg = str(config_path)
+    steps = [
+        _next_step(
+            "doctor",
+            "Validate config, local files, wrapper, OpenClaw binary, delivery, cron, and auth readiness.",
+            [*launcher, "doctor", "--config-path", config_arg],
+        ),
+        _next_step(
+            "check-daily-deal",
+            "Prepare today's Audible daily promotion result for the OpenClaw skill runtime.",
+            [*launcher, "prepare", "--config-path", config_arg],
+        ),
+    ]
+    if config_payload.get("goodreadsCsvPath"):
+        steps.append(
+            _next_step(
+                "scan-want-to-read",
+                "Run a small Want-to-Read discount scan to verify Goodreads CSV and Audible matching.",
+                [*launcher, "scan-want-to-read", "--config-path", config_arg, "--limit", "40"],
+            )
+        )
+    auth_path = normalize_space(str(config_payload.get("audibleAuthPath") or ""))
+    if auth_path:
+        steps.append(
+            _next_step(
+                "check-audible-auth",
+                "Check saved Audible auth readiness and file permissions without printing tokens.",
+                [*launcher, "audible-auth-status", "--auth-path", auth_path],
+                optional=True,
+            )
+        )
+    else:
+        suggested_auth_path = str(storage_dir / "audible-auth.json")
+        steps.append(
+            _next_step(
+                "optional-audible-auth",
+                "Optional: start external-browser Audible auth for member-visible Want-to-Read prices.",
+                [*launcher, "audible-auth-start", "--auth-path", suggested_auth_path, "--audible-marketplace", spec["key"]],
+                optional=True,
+            )
+        )
+    return steps
+
+
 def setup_configuration(
     options: dict[str, Any],
     *,
@@ -198,6 +263,12 @@ def setup_configuration(
         "configJson": json.dumps(config_payload, indent=2, sort_keys=True, ensure_ascii=False),
         "cronCommand": cron_command,
         "marketplace": spec["key"],
+        "nextSteps": build_setup_next_steps(
+            config_path=config_path,
+            storage_dir=storage_dir,
+            spec=spec,
+            config_payload=config_payload,
+        ),
     }
 
     try:
