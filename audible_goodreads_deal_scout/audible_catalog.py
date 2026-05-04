@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any, Callable
 from urllib.error import HTTPError, URLError
 
-from .audible_source import AudibleBlockedError, AudibleFetchError, decode_response_bytes
+from .audible_source import AudibleBlockedError, AudibleFetchError, decode_response_bytes, validate_audible_fetch_url
 from .constants import AUDIBLE_BLOCK_MARKERS, PROMOTION_MARKERS
 from .shared import (
     normalize_author_key,
@@ -58,7 +58,8 @@ class RequestBudgetExceeded(RuntimeError):
     pass
 
 
-def fetch_catalog_text_with_final_url(url: str) -> tuple[str, str]:
+def fetch_catalog_text_with_final_url(url: str, *, allow_unsafe_url: bool = False) -> tuple[str, str]:
+    url = validate_audible_fetch_url(url, allow_unsafe_url=allow_unsafe_url)
     request = urllib.request.Request(
         url,
         headers={

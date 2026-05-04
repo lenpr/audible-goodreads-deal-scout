@@ -221,6 +221,20 @@ class AudibleGoodreadsDealScoutTests(unittest.TestCase):
         self.assertIn("Signal Fire", text)
         self.assertEqual(final_url, "https://www.audible.com/pd/Signal-Fire-Audiobook/ABC1234567")
 
+    def test_audible_fetch_rejects_non_audible_urls(self) -> None:
+        with mock.patch.object(audible_source.urllib.request, "urlopen") as urlopen:
+            with self.assertRaises(audible_source.AudibleFetchError) as context:
+                audible_source.fetch_text_with_final_url("https://example.com/dailydeal", retries=0)
+        self.assertFalse(urlopen.called)
+        self.assertEqual(context.exception.reason_code, "error_unsafe_audible_url")
+
+    def test_catalog_fetch_rejects_unsupported_audible_paths(self) -> None:
+        with mock.patch.object(audible_catalog.urllib.request, "urlopen") as urlopen:
+            with self.assertRaises(audible_source.AudibleFetchError) as context:
+                audible_catalog.fetch_catalog_text_with_final_url("https://www.audible.com/account")
+        self.assertFalse(urlopen.called)
+        self.assertEqual(context.exception.reason_code, "error_unsupported_audible_path")
+
     def test_daily_promotion_fetch_recovers_with_curl_after_python_503(self) -> None:
         def failing_urlopen(request: object, timeout: int = 30) -> FakeHttpResponse:
             del timeout

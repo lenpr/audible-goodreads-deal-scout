@@ -7,6 +7,7 @@ import re
 import shutil
 import subprocess
 import time
+import urllib.parse
 import urllib.request
 import zlib
 from datetime import datetime
@@ -58,6 +59,14 @@ AUDIBLE_FETCH_HEADERS = {
 SUPPORTED_AUDIBLE_FETCH_BACKENDS = {"auto", "python", "curl"}
 CURL_RECOVERABLE_HTTP_STATUSES = {403, 429, 500, 502, 503, 504}
 CURL_META_MARKER = "__AUDIBLE_GOODREADS_DEAL_SCOUT_CURL_META__"
+ALLOWED_AUDIBLE_HOSTS = {
+    "www.audible.com",
+    "www.audible.co.uk",
+    "www.audible.de",
+    "www.audible.ca",
+    "www.audible.com.au",
+}
+ALLOWED_AUDIBLE_PATH_PREFIXES = ("/dailydeal", "/pd/", "/search")
 
 
 class AudibleFetchResult:
@@ -83,6 +92,28 @@ class AudibleFetchResult:
 
 def curl_available(curl_bin: str = "curl") -> bool:
     return bool(shutil.which(curl_bin) if "/" not in curl_bin else Path(curl_bin).exists())
+
+
+def validate_audible_fetch_url(url: str, *, allow_unsafe_url: bool = False) -> str:
+    normalized_url = normalize_space(url)
+    if allow_unsafe_url:
+        return normalized_url
+    parsed = urllib.parse.urlparse(normalized_url)
+    host = normalize_space(parsed.netloc).lower()
+    path = parsed.path or "/"
+    if parsed.scheme != "https" or host not in ALLOWED_AUDIBLE_HOSTS:
+        raise AudibleFetchError(
+            f"Refusing to fetch non-Audible URL: {normalized_url}",
+            reason_code="error_unsafe_audible_url",
+            final_url=normalized_url,
+        )
+    if not any(path == prefix.rstrip("/") or path.startswith(prefix) for prefix in ALLOWED_AUDIBLE_PATH_PREFIXES):
+        raise AudibleFetchError(
+            f"Refusing to fetch unsupported Audible path: {normalized_url}",
+            reason_code="error_unsupported_audible_path",
+            final_url=normalized_url,
+        )
+    return normalized_url
 
 
 def _fetch_reason_code(backend: str, http_status: int | None, exc: Exception | None = None) -> str:
@@ -425,7 +456,9 @@ def fetch_text_with_final_url(
     backoff_seconds: float = 1.0,
     backend: str = "auto",
     curl_bin: str = "curl",
+    allow_unsafe_url: bool = False,
 ) -> AudibleFetchResult:
+    url = validate_audible_fetch_url(url, allow_unsafe_url=allow_unsafe_url)
     normalized_backend = normalize_space(backend).lower() or "auto"
     if normalized_backend not in SUPPORTED_AUDIBLE_FETCH_BACKENDS:
         raise ValueError(
