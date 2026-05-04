@@ -103,6 +103,8 @@ Do not fetch Audible yourself in model text. Always start with the prep layer:
 sh "{baseDir}/scripts/audible-goodreads-deal-scout.sh" prepare --config-path "<config-path>" --invocation-mode manual
 ```
 
+By default, `prepare` uses `audibleFetchBackend: auto`: Python fetch first, then browser-like `curl` fallback for recoverable Audible HTTP failures such as Python-client `503` rejections. Use `--audible-fetch-backend python` or `--audible-fetch-backend curl` only for explicit diagnostics.
+
 Prep returns JSON with:
 - `status: ready | suppress | error`
 - `reasonCode`
@@ -110,7 +112,7 @@ Prep returns JSON with:
 - `audible`
 - `personalData`
 - `artifacts`
-- `metadata`
+- `metadata`, including `metadata.fetch` when fetch diagnostics are available
 
 If prep returns `suppress` or `error`, surface that result directly and stop. Do not do Goodreads lookup or fit writing after a prep-layer short-circuit.
 
@@ -290,7 +292,8 @@ For scheduled runs, prep with `--invocation-mode scheduled`. If prep returns `su
 ```bash
 sh "{baseDir}/scripts/audible-goodreads-deal-scout.sh" mark-emitted \
   --state-file "<state-file>" \
-  --prepare-json "<prepare-result-path>"
+  --prepare-json "<prepare-result-path>" \
+  --deal-key "<deal-key>"
 ```
 
 Use the same current scheduled prepare artifact that was delivered. `run-and-deliver` refuses scheduled error prep results and stale scheduled artifacts whose `metadata.storeLocalDate` is not the current Audible marketplace date.

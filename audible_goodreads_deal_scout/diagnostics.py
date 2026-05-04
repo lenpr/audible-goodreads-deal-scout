@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-import shutil
 import json
+import shutil
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from .audible_auth import auth_file_status
+from .audible_source import SUPPORTED_AUDIBLE_FETCH_BACKENDS, curl_available
 from .delivery import build_cron_message, list_cron_jobs
 from .settings import default_config_path, default_storage_dir, load_config, skill_root, validate_marketplace
 from .shared import normalize_space
@@ -66,6 +67,37 @@ def _openclaw_check(openclaw_bin: str) -> dict[str, Any]:
         "status": "ok" if resolved else "missing",
         "bin": openclaw_bin,
         "resolvedPath": resolved,
+    }
+
+
+def _audible_fetch_backend_check(config: dict[str, Any]) -> dict[str, Any]:
+    backend = normalize_space(str(config.get("audibleFetchBackend") or "auto")).lower() or "auto"
+    curl_ready = curl_available()
+    if backend not in SUPPORTED_AUDIBLE_FETCH_BACKENDS:
+        return {
+            "ok": False,
+            "status": "invalid",
+            "backend": backend,
+            "curlAvailable": curl_ready,
+            "errors": [f"Unsupported audibleFetchBackend '{backend}'. Use auto, python, or curl."],
+        }
+    if backend == "curl" and not curl_ready:
+        return {
+            "ok": False,
+            "status": "curl_missing",
+            "backend": backend,
+            "curlAvailable": False,
+            "errors": ["audibleFetchBackend is set to curl, but curl was not found on PATH."],
+        }
+    warnings = []
+    if backend == "auto" and not curl_ready:
+        warnings.append("curl was not found; prepare cannot use the browser-like fallback if Python fetching is rejected.")
+    return {
+        "ok": True,
+        "status": "ok" if not warnings else "warning",
+        "backend": backend,
+        "curlAvailable": curl_ready,
+        "warnings": warnings,
     }
 
 
@@ -154,6 +186,7 @@ def doctor_report(
         },
         "wrapper": _wrapper_check(),
         "openclaw": _openclaw_check(openclaw_bin),
+        "audibleFetchBackend": _audible_fetch_backend_check(config),
         "csv": _path_check(config.get("goodreadsCsvPath"), required=False, label="Goodreads CSV"),
         "notes": _path_check(config.get("preferencesPath") or config.get("notesFile"), required=False, label="Preference notes file"),
         "cache": {

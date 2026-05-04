@@ -55,6 +55,7 @@ def build_parser() -> argparse.ArgumentParser:
     setup_parser.add_argument("--preferences-path")
     setup_parser.add_argument("--audible-marketplace")
     setup_parser.add_argument("--audible-auth-path")
+    setup_parser.add_argument("--audible-fetch-backend", choices=("auto", "python", "curl"))
     setup_parser.add_argument("--goodreads-csv")
     setup_parser.add_argument("--notes-file")
     setup_parser.add_argument("--notes-text")
@@ -85,6 +86,7 @@ def build_parser() -> argparse.ArgumentParser:
     prepare_parser.add_argument("--today")
     prepare_parser.add_argument("--invocation-mode", choices=("manual", "scheduled"), default="manual")
     prepare_parser.add_argument("--audible-deal-url")
+    prepare_parser.add_argument("--audible-fetch-backend", choices=("auto", "python", "curl"))
     prepare_parser.add_argument("--freshness-days", type=int, default=None)
     prepare_parser.add_argument("--notes-warning-chars", type=int, default=None)
     prepare_parser.add_argument("--csv-column", action="append", default=[])
@@ -258,6 +260,7 @@ def interactive_setup_defaults(args: argparse.Namespace) -> dict[str, object]:
     return {
         "audibleMarketplace": marketplace,
         "audibleAuthPath": args.audible_auth_path,
+        "audibleFetchBackend": args.audible_fetch_backend,
         "goodreadsCsvPath": csv_path or None,
         "notesText": notes_text or "",
         "notesFile": notes_file or None,
@@ -287,6 +290,7 @@ def command_setup(args: argparse.Namespace) -> int:
             "preferencesPath": args.preferences_path,
             "audibleMarketplace": args.audible_marketplace or "us",
             "audibleAuthPath": args.audible_auth_path,
+            "audibleFetchBackend": args.audible_fetch_backend,
             "goodreadsCsvPath": args.goodreads_csv,
             "notesFile": args.notes_file,
             "notesText": args.notes_text or "",
@@ -322,6 +326,7 @@ def command_prepare(args: argparse.Namespace) -> int:
         "today": args.today,
         "invocationMode": args.invocation_mode,
         "audibleDealUrl": args.audible_deal_url,
+        "audibleFetchBackend": args.audible_fetch_backend,
         "freshnessDays": args.freshness_days,
         "notesWarningChars": args.notes_warning_chars,
         "csvColumnOverrides": core.parse_csv_column_overrides(args.csv_column),

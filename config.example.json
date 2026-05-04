@@ -2,6 +2,7 @@
   "artifactDir": ".audible-goodreads-deal-scout/artifacts/current",
   "audibleAuthPath": null,
   "audibleDealUrl": null,
+  "audibleFetchBackend": "auto",
   "audibleFetchBackoffSeconds": 1.0,
   "audibleFetchRetries": 2,
   "audibleMarketplace": "us",

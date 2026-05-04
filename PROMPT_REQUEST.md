@@ -149,21 +149,22 @@ Apply these rules in order:
    - `Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8`
    - `Accept-Encoding: gzip, deflate`
    - `Accept-Language: en-US,en;q=0.9`
-6. Retry transient daily-promotion failures and temporary no-active-promotion parses before returning a suppression or error.
-7. Parse title, author, product id, URL, summary, genres, runtime, year, sale price, list price, and hidden/member-price signals where visible.
-8. Compute a deal key from marketplace, store-local date, and product id.
-9. In scheduled mode, suppress a duplicate if the same deal key was already emitted.
-10. Load Goodreads CSV if configured.
-11. Validate CSV column overrides against actual detected headers before parsing.
-12. Classify exact shelf matches locally.
-13. If matching is ambiguous for the same title, return `error_ambiguous_personal_match`.
-14. If exact shelf is `read`, return `suppress_already_read`.
-15. If exact shelf is `currently-reading`, return `suppress_currently_reading`.
-16. If exact shelf is `to-read`, keep the run active. This is positive evidence and can override the public Goodreads threshold later.
-17. Build compact personal artifacts only when privacy allows it.
-18. Always write a fresh `prepare-result.json`, including `ready`, `suppress`, and `error` outcomes.
+6. Use an `auto` fetch backend by default: try the Python fetch path first, then fall back to browser-like `curl` for recoverable Audible HTTP failures such as Python-client `503`, `403`, `429`, or gateway errors. Preserve diagnostics including backend, HTTP status, final URL, attempts, and fallback reason in prepare metadata.
+7. Retry transient daily-promotion failures and temporary no-active-promotion parses before returning a suppression or error.
+8. Parse title, author, product id, URL, summary, genres, runtime, year, sale price, list price, and hidden/member-price signals where visible.
+9. Compute a deal key from marketplace, store-local date, and product id.
+10. In scheduled mode, suppress a duplicate if the same deal key was already emitted.
+11. Load Goodreads CSV if configured.
+12. Validate CSV column overrides against actual detected headers before parsing.
+13. Classify exact shelf matches locally.
+14. If matching is ambiguous for the same title, return `error_ambiguous_personal_match`.
+15. If exact shelf is `read`, return `suppress_already_read`.
+16. If exact shelf is `currently-reading`, return `suppress_currently_reading`.
+17. If exact shelf is `to-read`, keep the run active. This is positive evidence and can override the public Goodreads threshold later.
+18. Build compact personal artifacts only when privacy allows it.
+19. Always write a fresh `prepare-result.json`, including `ready`, `suppress`, and `error` outcomes.
 
-The last rule is critical. A failed current-day prepare must never leave a stale previous-day `artifacts/current/prepare-result.json` behind.
+The last rule is critical. A failed current-day prepare must never leave a stale previous-day `artifacts/current/prepare-result.json` behind. A fresh prepare must also remove stale downstream current artifacts, including `runtime-output.json`, `run-and-deliver-result.json`, and `mark-emitted-result.json`, so old delivery results are not visible as current.
 
 ## Daily Deal Runtime Contract
 
@@ -658,7 +659,7 @@ Build a staged daily-deal flow:
 3. finalize: strict runtime JSON validation, decision mapping, concise message rendering
 4. delivery: optional OpenClaw delivery with explicit delivery policies
 
-Prepare must always write a fresh prepare-result.json for ready, suppress, and error outcomes. Scheduled run-and-deliver must refuse error prep results and stale scheduled artifacts whose metadata.storeLocalDate is not today's date in the Audible marketplace timezone. mark-emitted must mark only the deal key from the same current prepare artifact that was actually delivered.
+Prepare must always write a fresh prepare-result.json for ready, suppress, and error outcomes and clear stale downstream current artifacts from previous runs. The default Audible fetch backend should try Python first and recover with browser-like curl when Audible rejects Python-client traffic but curl succeeds. Scheduled run-and-deliver must refuse error prep results and stale scheduled artifacts whose metadata.storeLocalDate is not today's date in the Audible marketplace timezone. mark-emitted must mark only the deal key from the same current prepare artifact that was actually delivered.
 
 Support optional Goodreads CSV and notes. Validate missing explicit paths and invalid CSV header overrides. Suppress exact read/currently-reading matches before Goodreads lookup. Treat exact to-read match as positive evidence that can override the public threshold later. Enforce minimal privacy mode by omitting detailed personal artifacts, not just by telling the model not to use them.
 

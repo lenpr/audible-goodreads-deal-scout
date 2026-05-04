@@ -221,6 +221,87 @@ class AudibleGoodreadsDealScoutTests(unittest.TestCase):
         self.assertIn("Signal Fire", text)
         self.assertEqual(final_url, "https://www.audible.com/pd/Signal-Fire-Audiobook/ABC1234567")
 
+    def test_daily_promotion_fetch_recovers_with_curl_after_python_503(self) -> None:
+        def failing_urlopen(request: object, timeout: int = 30) -> FakeHttpResponse:
+            del timeout
+            raise audible_source.HTTPError(
+                request.full_url,  # type: ignore[attr-defined]
+                503,
+                "Service Unavailable",
+                hdrs=None,
+                fp=None,
+            )
+
+        curl_stdout = (
+            AUDIBLE_HTML
+            + "\n"
+            + audible_source.CURL_META_MARKER
+            + "200\thttps://www.audible.com/pd/Signal-Fire-Audiobook/ABC1234567"
+        )
+        completed = subprocess.CompletedProcess(["curl"], 0, stdout=curl_stdout, stderr="")
+
+        with (
+            mock.patch.object(audible_source.urllib.request, "urlopen", side_effect=failing_urlopen),
+            mock.patch.object(audible_source, "curl_available", return_value=True),
+            mock.patch.object(audible_source.subprocess, "run", return_value=completed),
+        ):
+            result = audible_source.fetch_text_with_final_url(
+                "https://www.audible.com/dailydeal",
+                retries=0,
+                backend="auto",
+            )
+
+        text, final_url = result
+        self.assertIn("Signal Fire", text)
+        self.assertEqual(final_url, "https://www.audible.com/pd/Signal-Fire-Audiobook/ABC1234567")
+        self.assertEqual(result.backend, "curl")
+        self.assertEqual(result.attempts[0]["reasonCode"], "http_503_python_fetch_rejected")
+        self.assertEqual(result.attempts[-1]["backend"], "curl")
+        self.assertTrue(any("recovered with curl fallback" in warning for warning in result.warnings))
+
+    def test_prepare_records_curl_fallback_metadata_after_python_503(self) -> None:
+        def failing_urlopen(request: object, timeout: int = 30) -> FakeHttpResponse:
+            del timeout
+            raise audible_source.HTTPError(
+                request.full_url,  # type: ignore[attr-defined]
+                503,
+                "Service Unavailable",
+                hdrs=None,
+                fp=None,
+            )
+
+        curl_stdout = (
+            AUDIBLE_HTML
+            + "\n"
+            + audible_source.CURL_META_MARKER
+            + "200\thttps://www.audible.com/pd/Signal-Fire-Audiobook/ABC1234567"
+        )
+        completed = subprocess.CompletedProcess(["curl"], 0, stdout=curl_stdout, stderr="")
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            artifact_dir = Path(tmp_dir) / "artifacts"
+            with (
+                mock.patch.object(audible_source.urllib.request, "urlopen", side_effect=failing_urlopen),
+                mock.patch.object(audible_source, "curl_available", return_value=True),
+                mock.patch.object(audible_source.subprocess, "run", return_value=completed),
+            ):
+                result = core.prepare_run(
+                    {
+                        "artifactDir": str(artifact_dir),
+                        "audibleMarketplace": "us",
+                        "audibleFetchBackend": "auto",
+                        "audibleFetchRetries": 0,
+                    }
+                )
+
+        fetch_metadata = result["metadata"]["fetch"]
+        self.assertEqual(result["status"], "ready")
+        self.assertEqual(result["audible"]["title"], "Signal Fire")
+        self.assertEqual(fetch_metadata["backend"], "curl")
+        self.assertTrue(fetch_metadata["recoveredByFallback"])
+        self.assertEqual(fetch_metadata["firstFailureReasonCode"], "http_503_python_fetch_rejected")
+        self.assertTrue(any("recovered with curl fallback" in warning for warning in result["warnings"]))
+
     def test_prepare_retries_transient_no_active_promotion(self) -> None:
         no_deal_html = AUDIBLE_HTML.replace(
             "Get today's Daily Deal before time runs out! $4.99 Deal ends @ 11:59PM PT.",
@@ -278,6 +359,32 @@ class AudibleGoodreadsDealScoutTests(unittest.TestCase):
         self.assertEqual(result["reasonCode"], "error_audible_fetch_failed")
         self.assertEqual(artifact_payload["reasonCode"], "error_audible_fetch_failed")
         self.assertEqual(artifact_payload["metadata"]["storeLocalDate"], "2026-04-29")
+
+    def test_prepare_clears_stale_downstream_artifacts(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            artifact_dir = Path(tmp_dir) / "artifacts"
+            artifact_dir.mkdir(parents=True)
+            stale_names = [
+                "runtime-output.json",
+                "run-and-deliver-result.json",
+                "mark-emitted-result.json",
+            ]
+            for name in stale_names:
+                (artifact_dir / name).write_text(json.dumps({"stale": True}), encoding="utf-8")
+
+            result = core.prepare_run(
+                {
+                    "artifactDir": str(artifact_dir),
+                    "audibleMarketplace": "us",
+                    "audibleFetchRetries": 0,
+                },
+                fetcher=fake_fetcher,
+            )
+
+            self.assertEqual(result["status"], "ready")
+            self.assertEqual(result["metadata"]["clearedDownstreamArtifacts"], stale_names)
+            for name in stale_names:
+                self.assertFalse((artifact_dir / name).exists())
 
     def test_prepare_suppression_overwrites_current_prepare_artifact(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -1877,8 +1984,11 @@ class WantToReadScanTests(unittest.TestCase):
                 ),
                 encoding="utf-8",
             )
-            report = diagnostics.doctor_report(config_path=config_path, openclaw_bin=sys.executable)
+            with mock.patch.object(diagnostics, "curl_available", return_value=True):
+                report = diagnostics.doctor_report(config_path=config_path, openclaw_bin=sys.executable)
         self.assertTrue(report["ok"])
+        self.assertEqual(report["checks"]["audibleFetchBackend"]["backend"], "auto")
+        self.assertTrue(report["checks"]["audibleFetchBackend"]["curlAvailable"])
         self.assertEqual(report["checks"]["csv"]["status"], "ok")
         self.assertTrue(report["checks"]["auth"]["ready"])
         self.assertEqual(report["checks"]["delivery"]["status"], "configured")

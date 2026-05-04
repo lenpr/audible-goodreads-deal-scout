@@ -26,6 +26,7 @@ from .audible_source import (
     AudibleFetchError,
     AudibleParseError,
     NoActivePromotionError,
+    SUPPORTED_AUDIBLE_FETCH_BACKENDS,
     fetch_text_with_final_url,
     parse_audible_chip_genres,
     parse_audible_deal,
@@ -102,6 +103,13 @@ from .shared import (
 )
 
 
+DOWNSTREAM_PREP_ARTIFACTS = (
+    "runtime-output.json",
+    "run-and-deliver-result.json",
+    "mark-emitted-result.json",
+)
+
+
 def export_age_days(export_path: Path, logical_run_date: date) -> int:
     modified = datetime.fromtimestamp(export_path.stat().st_mtime, tz=UTC).date()
     return max(0, (logical_run_date - modified).days)
@@ -143,6 +151,53 @@ def load_state(path: Path | None) -> dict[str, Any]:
 def save_state(path: Path, state: dict[str, Any]) -> None:
     payload = {**default_state(), **state, "updatedAt": now_iso()}
     write_json_atomic(path, payload)
+
+
+def clear_downstream_prepare_artifacts(artifact_dir: Path) -> list[str]:
+    cleared: list[str] = []
+    for filename in DOWNSTREAM_PREP_ARTIFACTS:
+        path = artifact_dir / filename
+        if path.exists() and path.is_file():
+            path.unlink()
+            cleared.append(filename)
+    return cleared
+
+
+def append_unique_warning(warnings: list[str], message: str) -> None:
+    normalized = normalize_space(message)
+    if normalized and normalized not in warnings:
+        warnings.append(normalized)
+
+
+def fetch_metadata_from_attempts(attempts: list[dict[str, Any]]) -> dict[str, Any]:
+    normalized_attempts = [dict(attempt) for attempt in attempts if isinstance(attempt, dict)]
+    if not normalized_attempts:
+        return {}
+    successful_attempt = next((attempt for attempt in reversed(normalized_attempts) if attempt.get("ok")), None)
+    first_failure = next((attempt for attempt in normalized_attempts if not attempt.get("ok")), None)
+    final_attempt = successful_attempt or normalized_attempts[-1]
+    metadata: dict[str, Any] = {
+        "backend": final_attempt.get("backend"),
+        "attempts": normalized_attempts,
+        "recoveredByFallback": bool(
+            successful_attempt
+            and first_failure
+            and successful_attempt.get("backend") != first_failure.get("backend")
+        ),
+    }
+    for source_key, target_key in (
+        ("httpStatus", "httpStatus"),
+        ("finalUrl", "finalUrl"),
+        ("reasonCode", "reasonCode"),
+    ):
+        value = final_attempt.get(source_key)
+        if value is None and first_failure:
+            value = first_failure.get(source_key)
+        if value is not None:
+            metadata[target_key] = value
+    if first_failure and first_failure.get("reasonCode"):
+        metadata["firstFailureReasonCode"] = first_failure.get("reasonCode")
+    return metadata
 
 
 def make_prepare_result(
@@ -259,16 +314,25 @@ def fetch_audible_deal_with_retry(
     retries: int,
     backoff_seconds: float,
     warnings: list[str],
+    fetch_attempts: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     retryable_errors = (AudibleFetchError, NoActivePromotionError)
     for attempt in range(max(0, retries) + 1):
         try:
-            html_text, final_url = fetcher(requested_url)
+            fetch_result = fetcher(requested_url)
+            html_text, final_url = fetch_result
+            if fetch_attempts is not None:
+                fetch_attempts.extend(list(getattr(fetch_result, "attempts", []) or []))
+            for warning in list(getattr(fetch_result, "warnings", []) or []):
+                append_unique_warning(warnings, warning)
             return parse_audible_deal(html_text, final_url, requested_url)
         except retryable_errors as exc:
+            if fetch_attempts is not None:
+                fetch_attempts.extend(list(getattr(exc, "attempts", []) or []))
             if attempt >= max(0, retries):
                 raise
-            warnings.append(
+            append_unique_warning(
+                warnings,
                 f"Retrying Audible daily promotion fetch after transient {type(exc).__name__}: {exc}"
             )
             if backoff_seconds > 0:
@@ -594,17 +658,25 @@ def prepare_run(
     fetcher: Callable[[str], tuple[str, str]] | None = None,
 ) -> dict[str, Any]:
     ensure_python_version()
-    fetcher = fetcher or (lambda url: fetch_text_with_final_url(url, retries=0))
     config_path = Path(options["configPath"]).resolve() if options.get("configPath") else None
     _, file_config = load_config(config_path)
     merged = {**file_config, **{key: value for key, value in options.items() if value is not None}}
     artifact_dir = Path(str(merged.get("artifactDir") or default_artifact_dir())).expanduser()
+    cleared_downstream_artifacts = clear_downstream_prepare_artifacts(artifact_dir)
+    fetch_attempts: list[dict[str, Any]] = []
 
     def finish_prepare(
         prep_result: dict[str, Any],
         *,
         include_runtime_contract: bool = False,
     ) -> dict[str, Any]:
+        metadata = prep_result.setdefault("metadata", {})
+        if isinstance(metadata, dict):
+            if cleared_downstream_artifacts:
+                metadata.setdefault("clearedDownstreamArtifacts", cleared_downstream_artifacts)
+            fetch_metadata = fetch_metadata_from_attempts(fetch_attempts)
+            if fetch_metadata:
+                metadata.setdefault("fetch", fetch_metadata)
         return attach_prepare_artifacts_for_status(
             artifact_dir,
             prep_result,
@@ -696,13 +768,29 @@ def prepare_run(
     audible_fetch_backoff_seconds = float(
         merged.get("audibleFetchBackoffSeconds") if merged.get("audibleFetchBackoffSeconds") is not None else 1.0
     )
+    audible_fetch_backend = normalize_space(str(merged.get("audibleFetchBackend") or "auto")).lower() or "auto"
+    if audible_fetch_backend not in SUPPORTED_AUDIBLE_FETCH_BACKENDS:
+        append_unique_warning(
+            warnings,
+            f"Unsupported audibleFetchBackend '{audible_fetch_backend}' was ignored; using auto.",
+        )
+        audible_fetch_backend = "auto"
+    active_fetcher = fetcher or (
+        lambda url: fetch_text_with_final_url(
+            url,
+            retries=0,
+            backoff_seconds=audible_fetch_backoff_seconds,
+            backend=audible_fetch_backend,
+        )
+    )
     try:
         candidate = fetch_audible_deal_with_retry(
-            fetcher,
+            active_fetcher,
             requested_url,
             retries=audible_fetch_retries,
             backoff_seconds=audible_fetch_backoff_seconds,
             warnings=warnings,
+            fetch_attempts=fetch_attempts,
         )
     except NoActivePromotionError as exc:
         return finish_prepare(

@@ -356,13 +356,16 @@ Live marketplace behavior can still vary. A supported store may still return:
 - a blocked page
 - a page-layout drift error
 
+Daily-promotion fetches use `audibleFetchBackend: "auto"` by default. That means the skill tries the built-in Python fetch path first and falls back to browser-like `curl` when Audible rejects the Python client with recoverable HTTP failures such as `503`. Use `"python"` or `"curl"` only when you deliberately want to force one backend.
+
 The Want-to-Read discount scan is currently US-only. The daily-promotion workflow remains fixture-tested for the marketplace keys listed above.
 
 If you want a non-US store, set `audibleMarketplace` to one of the keys above:
 
 ```json
 {
-  "audibleMarketplace": "uk"
+  "audibleMarketplace": "uk",
+  "audibleFetchBackend": "auto"
 }
 ```
 
@@ -563,7 +566,8 @@ Three issues cause most confusing runs:
 - Wrong CSV header override: `--csv-column role=Header` must match the Goodreads export header exactly. If you are unsure, run `show-csv-headers` first.
 - Stale Goodreads export: if the CSV is old, the skill can still run, but read status, shelf state, and fit evidence may lag behind your actual library.
 - Stale scheduled artifact: scheduled `run-and-deliver` refuses error prep results and stale `prepare-result.json` files whose `metadata.storeLocalDate` no longer matches the current Audible marketplace date.
-- Transient Audible daily-deal pages: the prep step retries transient fetch failures and temporary no-active-promotion parses before returning a suppression or error.
+- Stale downstream artifacts: every fresh `prepare` removes old `runtime-output.json`, `run-and-deliver-result.json`, and `mark-emitted-result.json` from the current artifact directory before writing the new prep result.
+- Transient Audible daily-deal pages: the prep step retries transient fetch failures and temporary no-active-promotion parses before returning a suppression or error. With `audibleFetchBackend: "auto"`, it can recover from Python-client rejections by retrying the same URL through browser-like `curl`.
 
 Useful checks:
 
@@ -573,7 +577,7 @@ sh ./scripts/audible-goodreads-deal-scout.sh show-csv-headers "/absolute/path/to
 sh ./scripts/audible-goodreads-deal-scout.sh publish-audit --version 0.1.11 --tags latest
 ```
 
-`doctor` checks the configured config, CSV, notes, auth file, cache directory, delivery settings, cron settings, local OpenClaw binary, and bundled shell wrapper. Add `--check-cron` when you want it to query live OpenClaw cron jobs.
+`doctor` checks the configured config, CSV, notes, auth file, cache directory, delivery settings, cron settings, Audible fetch backend, local OpenClaw binary, and bundled shell wrapper. Add `--check-cron` when you want it to query live OpenClaw cron jobs.
 
 If your OpenClaw install strips executable bits from bundled scripts, run the wrapper through `sh` exactly as shown above and in `SKILL.md`.
 - Scheduled runs cannot stop for interactive exec approval. If your OpenClaw host keeps `exec` in `allowlist` mode, allowlist the launcher your host expects for `sh .../scripts/audible-goodreads-deal-scout.sh` before enabling daily automation, for example `/bin/sh` when that is the shell your host uses.
