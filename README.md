@@ -70,8 +70,8 @@ clawhub login
 clawhub publish . \
   --slug audible-goodreads-deal-scout \
   --name "Audible Goodreads Deal Scout" \
-  --version 0.1.11 \
-  --changelog "Prevent stale scheduled delivery artifacts after failed prep and harden Audible daily-promotion fetches." \
+  --version 0.1.12 \
+  --changelog "Add Audible URL guardrails, live fetch diagnostics, and fetch/test refactors." \
   --tags latest
 ```
 
@@ -574,7 +574,7 @@ Useful checks:
 ```bash
 sh ./scripts/audible-goodreads-deal-scout.sh doctor --config-path .audible-goodreads-deal-scout/config.json
 sh ./scripts/audible-goodreads-deal-scout.sh show-csv-headers "/absolute/path/to/goodreads_library_export.csv"
-sh ./scripts/audible-goodreads-deal-scout.sh publish-audit --version 0.1.11 --tags latest
+sh ./scripts/audible-goodreads-deal-scout.sh publish-audit --version 0.1.12 --tags latest
 ```
 
 `doctor` checks the configured config, CSV, notes, auth file, cache directory, delivery settings, cron settings, Audible fetch backend, local OpenClaw binary, and bundled shell wrapper. Add `--check-cron` when you want it to query live OpenClaw cron jobs.
@@ -608,7 +608,7 @@ Useful helper commands:
 sh ./scripts/audible-goodreads-deal-scout.sh doctor --config-path .audible-goodreads-deal-scout/config.json
 sh ./scripts/audible-goodreads-deal-scout.sh show-csv-headers "/absolute/path/to/goodreads_library_export.csv"
 sh ./scripts/audible-goodreads-deal-scout.sh measure-context --goodreads-csv "/absolute/path/to/goodreads_library_export.csv" --output /tmp/fit-context.json
-sh ./scripts/audible-goodreads-deal-scout.sh publish-audit --version 0.1.11
+sh ./scripts/audible-goodreads-deal-scout.sh publish-audit --version 0.1.12
 ```
 
 Finalize and deliver in one step:
@@ -627,6 +627,7 @@ sh ./scripts/audible-goodreads-deal-scout.sh run-and-deliver \
 - `agents/openai.yaml`: interface metadata and default prompt for OpenClaw agent surfaces
 - `scripts/audible-goodreads-deal-scout.sh`: bundled shell wrapper for local CLI and OpenClaw installs that may not preserve executable bits
 - `audible_goodreads_deal_scout/core.py`: prep/orchestration logic
+- `audible_goodreads_deal_scout/audible_fetch.py`: guarded Audible HTTP fetching, browser-like headers, and curl fallback
 - `audible_goodreads_deal_scout/audible_auth.py`: optional headless Audible auth and API price lookup helpers
 - `audible_goodreads_deal_scout/audible_catalog.py`: Audible catalog search and conservative price parsing
 - `audible_goodreads_deal_scout/cli_errors.py`: structured CLI error payload helpers
@@ -646,10 +647,10 @@ sh ./scripts/audible-goodreads-deal-scout.sh run-and-deliver \
 Before publishing, run:
 
 ```bash
-sh ./scripts/audible-goodreads-deal-scout.sh publish-audit --version 0.1.11 --tags latest
+sh ./scripts/audible-goodreads-deal-scout.sh publish-audit --version 0.1.12 --tags latest
 ```
 
-For public auditability, create a matching Git tag and GitHub release for each ClawHub version, for example `v0.1.11`.
+For public auditability, create a matching Git tag and GitHub release for each ClawHub version, for example `v0.1.12`.
 
 ## Why this is worth publishing
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.12
+
+- Restrict Audible fetches to known HTTPS Audible hosts and daily-deal/search/product paths before either Python or curl can request them
+- Add `doctor --check-audible-fetch` as an opt-in live host probe for the daily-deal fetch path
+- Extract browser-like Audible fetch backends into `audible_fetch.py` and remove the legacy contract harness in favor of the public CLI commands
+- Split shared test fixtures and Audible fetch tests out of the main test module
+
 ## 0.1.11
 
 - Always write a fresh `artifacts/current/prepare-result.json` for ready, suppress, and error prepare outcomes so failed current-day prep cannot leave a stale deliverable artifact behind

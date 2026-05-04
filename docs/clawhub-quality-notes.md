@@ -23,7 +23,7 @@ The main adjustments made here to align with that:
 
 Remaining improvement targets:
 
-- continue splitting `core.py`
+- continue splitting `core.py` after the fetch backend extraction
 - keep real runtime smoke tests part of every release
 - keep marketplace claims conservative if live pages drift
 - keep distinguishing "member cash price below list" from confirmed limited-time sale language in user-facing reports

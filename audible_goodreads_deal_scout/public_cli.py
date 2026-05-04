@@ -181,7 +181,7 @@ def build_parser() -> argparse.ArgumentParser:
         "publish-audit",
         help="Check that the skill bundle is shaped correctly for ClawHub publishing.",
     )
-    audit_parser.add_argument("--version", default="0.1.11")
+    audit_parser.add_argument("--version", default="0.1.12")
     audit_parser.add_argument("--tags", default="latest")
 
     finalize_parser = subparsers.add_parser(
@@ -465,6 +465,7 @@ def command_publish_audit(args: argparse.Namespace) -> int:
         "agents/openai.yaml": skill_dir / "agents" / "openai.yaml",
         "audible_goodreads_deal_scout/public_cli.py": skill_dir / "audible_goodreads_deal_scout" / "public_cli.py",
         "audible_goodreads_deal_scout/core.py": skill_dir / "audible_goodreads_deal_scout" / "core.py",
+        "audible_goodreads_deal_scout/audible_fetch.py": skill_dir / "audible_goodreads_deal_scout" / "audible_fetch.py",
         "audible_goodreads_deal_scout/audible_auth.py": skill_dir / "audible_goodreads_deal_scout" / "audible_auth.py",
         "audible_goodreads_deal_scout/audible_catalog.py": skill_dir / "audible_goodreads_deal_scout" / "audible_catalog.py",
         "audible_goodreads_deal_scout/cli_errors.py": skill_dir / "audible_goodreads_deal_scout" / "cli_errors.py",

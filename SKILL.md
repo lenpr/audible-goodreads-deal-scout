@@ -103,7 +103,7 @@ Do not fetch Audible yourself in model text. Always start with the prep layer:
 sh "{baseDir}/scripts/audible-goodreads-deal-scout.sh" prepare --config-path "<config-path>" --invocation-mode manual
 ```
 
-By default, `prepare` uses `audibleFetchBackend: auto`: Python fetch first, then browser-like `curl` fallback for recoverable Audible HTTP failures such as Python-client `503` rejections. Use `--audible-fetch-backend python` or `--audible-fetch-backend curl` only for explicit diagnostics.
+By default, `prepare` uses `audibleFetchBackend: auto`: guard the URL against non-Audible destinations, try Python fetch first, then use browser-like `curl` fallback for recoverable Audible HTTP failures such as Python-client `503` rejections. Use `--audible-fetch-backend python` or `--audible-fetch-backend curl` only for explicit diagnostics.
 
 Prep returns JSON with:
 - `status: ready | suppress | error`

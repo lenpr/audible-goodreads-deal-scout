@@ -34,6 +34,8 @@ The skill may fetch:
 - Audible authenticated product-price API responses when an Audible auth file is explicitly supplied
 - Goodreads public pages for runtime score resolution and optional rating enrichment
 
+Unauthenticated Audible HTML fetches are guarded to known HTTPS Audible hosts and daily-deal, search, or product paths before either the Python fetch path or curl fallback can request them.
+
 It does not send data to a private server controlled by this repository.
 
 ## Optional Audible authentication
