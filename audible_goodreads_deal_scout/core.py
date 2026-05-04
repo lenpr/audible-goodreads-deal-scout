@@ -21,13 +21,15 @@ from .constants import (
     FIT_REVIEW_SUMMARY_LIMIT,
     SUPPORTED_PRIVACY_MODES,
 )
-from .audible_source import (
+from .audible_fetch import (
     AudibleBlockedError,
     AudibleFetchError,
-    AudibleParseError,
-    NoActivePromotionError,
     SUPPORTED_AUDIBLE_FETCH_BACKENDS,
     fetch_text_with_final_url,
+)
+from .audible_source import (
+    AudibleParseError,
+    NoActivePromotionError,
     parse_audible_chip_genres,
     parse_audible_deal,
 )

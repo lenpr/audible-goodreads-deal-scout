@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from .audible_auth import auth_file_status
-from .audible_source import (
+from .audible_fetch import (
     SUPPORTED_AUDIBLE_FETCH_BACKENDS,
     AudibleBlockedError,
     AudibleFetchError,

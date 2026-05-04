@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any, Callable
 from urllib.error import HTTPError, URLError
 
-from .audible_source import AudibleBlockedError, AudibleFetchError, decode_response_bytes, validate_audible_fetch_url
+from .audible_fetch import AudibleBlockedError, AudibleFetchError, decode_response_bytes, validate_audible_fetch_url
 from .constants import AUDIBLE_BLOCK_MARKERS, PROMOTION_MARKERS
 from .shared import (
     normalize_author_key,
