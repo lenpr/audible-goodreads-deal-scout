@@ -2007,6 +2007,33 @@ class WantToReadScanTests(unittest.TestCase):
         self.assertTrue(report["checks"]["auth"]["ready"])
         self.assertEqual(report["checks"]["delivery"]["status"], "configured")
 
+    def test_doctor_report_can_check_live_audible_fetch(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            config_path = tmp / "config.json"
+            config_path.write_text(json.dumps({"audibleMarketplace": "us"}), encoding="utf-8")
+            fetch_result = audible_source.AudibleFetchResult(
+                "html",
+                "https://www.audible.com/pd/Signal-Fire-Audiobook/ABC1234567",
+                backend="curl",
+                attempts=[{"backend": "python", "ok": False}, {"backend": "curl", "ok": True}],
+                warnings=["recovered"],
+            )
+            with (
+                mock.patch.object(diagnostics, "curl_available", return_value=True),
+                mock.patch.object(diagnostics, "fetch_text_with_final_url", return_value=fetch_result) as fetch,
+            ):
+                report = diagnostics.doctor_report(
+                    config_path=config_path,
+                    openclaw_bin=sys.executable,
+                    check_audible_fetch=True,
+                )
+        self.assertTrue(report["ok"])
+        self.assertEqual(report["checks"]["audibleFetchLive"]["status"], "ok")
+        self.assertEqual(report["checks"]["audibleFetchLive"]["backend"], "curl")
+        self.assertEqual(report["warnings"], ["audibleFetchLive: recovered"])
+        fetch.assert_called_once_with("https://www.audible.com/dailydeal", retries=0, backend="auto")
+
     def test_cli_errors_are_structured_and_redacted(self) -> None:
         stdout = io.StringIO()
         with mock.patch.object(public_cli, "command_show_csv_headers", side_effect=RuntimeError("Bearer abc123 access_token: secret-token")):

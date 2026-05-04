@@ -7,7 +7,13 @@ from pathlib import Path
 from typing import Any
 
 from .audible_auth import auth_file_status
-from .audible_source import SUPPORTED_AUDIBLE_FETCH_BACKENDS, curl_available
+from .audible_source import (
+    SUPPORTED_AUDIBLE_FETCH_BACKENDS,
+    AudibleBlockedError,
+    AudibleFetchError,
+    curl_available,
+    fetch_text_with_final_url,
+)
 from .delivery import build_cron_message, list_cron_jobs
 from .settings import default_config_path, default_storage_dir, load_config, skill_root, validate_marketplace
 from .shared import normalize_space
@@ -101,6 +107,46 @@ def _audible_fetch_backend_check(config: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _audible_live_fetch_check(config: dict[str, Any]) -> dict[str, Any]:
+    marketplace = normalize_space(str(config.get("audibleMarketplace") or "us")).lower() or "us"
+    backend = normalize_space(str(config.get("audibleFetchBackend") or "auto")).lower() or "auto"
+    try:
+        spec = validate_marketplace(marketplace)
+        result = fetch_text_with_final_url(
+            normalize_space(str(config.get("audibleDealUrl") or spec["dealUrl"])),
+            retries=0,
+            backend=backend,
+        )
+    except AudibleBlockedError as exc:
+        return {
+            "ok": False,
+            "status": "blocked",
+            "marketplace": marketplace,
+            "backend": backend,
+            "error": str(exc),
+            "attempts": list(getattr(exc, "attempts", []) or []),
+        }
+    except (AudibleFetchError, ValueError) as exc:
+        return {
+            "ok": False,
+            "status": "fetch_failed",
+            "marketplace": marketplace,
+            "backend": backend,
+            "error": str(exc),
+            "reasonCode": getattr(exc, "reason_code", None),
+            "attempts": list(getattr(exc, "attempts", []) or []),
+        }
+    return {
+        "ok": True,
+        "status": "ok",
+        "marketplace": spec["key"],
+        "backend": getattr(result, "backend", backend),
+        "finalUrl": result.final_url,
+        "attempts": result.attempts,
+        "warnings": result.warnings,
+    }
+
+
 def _cron_check(
     config_path: Path,
     config: dict[str, Any],
@@ -158,6 +204,7 @@ def doctor_report(
     auth_path: Path | None = None,
     openclaw_bin: str = "openclaw",
     check_live_cron: bool = False,
+    check_audible_fetch: bool = False,
 ) -> dict[str, Any]:
     resolved_config_path = (config_path or default_config_path()).expanduser().resolve()
     config_exists = resolved_config_path.exists()
@@ -223,6 +270,8 @@ def doctor_report(
             "warnings": [],
             "errors": [],
         }
+    if check_audible_fetch:
+        checks["audibleFetchLive"] = _audible_live_fetch_check(config)
     warnings: list[str] = []
     errors: list[str] = []
     for name, check in checks.items():

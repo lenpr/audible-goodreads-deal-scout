@@ -169,6 +169,7 @@ def build_parser() -> argparse.ArgumentParser:
     doctor_parser.add_argument("--auth-path")
     doctor_parser.add_argument("--openclaw-bin", default="openclaw")
     doctor_parser.add_argument("--check-cron", action="store_true")
+    doctor_parser.add_argument("--check-audible-fetch", action="store_true")
 
     mark_parser = subparsers.add_parser("mark-emitted", help="Record a scheduled run's emitted deal key after the skill finishes.")
     mark_parser.add_argument("--state-file", required=True)
@@ -418,6 +419,7 @@ def command_doctor(args: argparse.Namespace) -> int:
         auth_path=Path(args.auth_path).expanduser() if args.auth_path else None,
         openclaw_bin=args.openclaw_bin,
         check_live_cron=args.check_cron,
+        check_audible_fetch=args.check_audible_fetch,
     )
     print(json.dumps(result, indent=2, sort_keys=True, ensure_ascii=False))
     return 0 if result.get("ok") else 1

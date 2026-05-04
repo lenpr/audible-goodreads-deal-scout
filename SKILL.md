@@ -221,6 +221,8 @@ sh "{baseDir}/scripts/audible-goodreads-deal-scout.sh" audible-auth-status \
   --auth-path "<workspace>/.audible-goodreads-deal-scout/audible-auth.json"
 ```
 
+Use `doctor --check-audible-fetch` only when the user wants a live host probe of the Audible daily-deal fetch path.
+
 ## Ready flow
 
 For `ready_*` prep results:
