@@ -392,9 +392,10 @@ Rules:
 - In `audible-auth-start`, tell the user to open the login URL in a browser.
 - In `audible-auth-finish`, accept the final redirect URL from the browser address bar, even if the browser shows an error or not-found page.
 - Store auth under the workspace storage directory, for example `.audible-goodreads-deal-scout/audible-auth.json`.
-- Treat the auth file as sensitive local state.
+- Treat the auth file as sensitive local state because it persists bearer access/refresh token fields. The auth flow may request cookie-style Audible/Amazon credential types for compatibility, but status output must not expose token contents.
 - Never print token contents.
-- Use `audible-auth-status` to check expiry and file permissions.
+- Use `audible-auth-status` to check expiry, allowed-use metadata, and file permissions.
+- Restrict authenticated use in code to token refresh, validated Audible product ids, and allowlisted Audible/Amazon API domains.
 
 Authenticated Want-to-Read scans should:
 - Use authenticated price lookup only when `--audible-auth-path` is supplied.

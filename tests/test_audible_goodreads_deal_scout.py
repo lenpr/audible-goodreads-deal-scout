@@ -1597,6 +1597,8 @@ class WantToReadScanTests(unittest.TestCase):
         self.assertEqual(saved["accessToken"], "access-1")
         self.assertEqual(saved["refreshToken"], "refresh-1")
         self.assertIn("/auth/register", post_json.call_args.args[0])
+        self.assertEqual(saved["purpose"], "audible_member_price_lookup")
+        self.assertEqual(saved["credentialMetadata"]["allowedUse"], "audible_product_price_lookup_only")
         if os.name == "posix":
             self.assertEqual(saved_mode, 0o600)
 
@@ -1628,7 +1630,90 @@ class WantToReadScanTests(unittest.TestCase):
             else:
                 fixed = audible_auth.auth_file_status(auth_path)
         self.assertTrue(fixed["ready"])
+        self.assertEqual(fixed["credentialMetadata"]["allowedUse"], "audible_product_price_lookup_only")
+        self.assertTrue(fixed["credentialMetadata"]["requestsCookieStyleCredentials"])
+        self.assertFalse(fixed["credentialMetadata"]["persistsCookieStyleCredentials"])
         self.assertNotIn("access-secret", json.dumps(fixed))
+
+    def test_audible_auth_status_rejects_tampered_domain(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            auth_path = Path(tmp_dir) / "audible-auth.json"
+            auth_path.write_text(
+                json.dumps(
+                    {
+                        "schemaVersion": 1,
+                        "status": "ready",
+                        "marketplace": "us",
+                        "domain": "example.com",
+                        "refreshToken": "refresh-secret",
+                        "accessToken": "access-secret",
+                        "expires": 4_102_444_800,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            if os.name == "posix":
+                os.chmod(auth_path, 0o600)
+            status = audible_auth.auth_file_status(auth_path)
+        self.assertFalse(status["ok"])
+        self.assertIn("marketplace/domain mismatch", " ".join(status["errors"]))
+        self.assertNotIn("refresh-secret", json.dumps(status))
+
+    def test_authenticated_product_pricing_restricts_product_id_and_endpoint(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            auth_path = Path(tmp_dir) / "audible-auth.json"
+            auth_path.write_text(
+                json.dumps(
+                    {
+                        "schemaVersion": 1,
+                        "status": "ready",
+                        "marketplace": "us",
+                        "domain": "com",
+                        "refreshToken": "refresh-secret",
+                        "accessToken": "access-secret",
+                        "expires": 4_102_444_800,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            if os.name == "posix":
+                os.chmod(auth_path, 0o600)
+            with mock.patch.object(audible_auth, "_get_json", return_value={"product": {"price": {"amount": "7.95"}}}) as get_json:
+                pricing = audible_auth.authenticated_product_pricing(auth_path, "b0b6qgtnvs")
+            with mock.patch.object(audible_auth, "refresh_access_token") as refresh:
+                with self.assertRaises(audible_auth.AudibleAuthError):
+                    audible_auth.authenticated_product_pricing(auth_path, "B0B6QGTNVS/../../x")
+        called_url = get_json.call_args.args[0]
+        self.assertTrue(called_url.startswith("https://api.audible.com/1.0/catalog/products/B0B6QGTNVS?"))
+        self.assertIn("response_groups=price", called_url)
+        self.assertEqual(pricing["source"], "audible_api_authenticated")
+        refresh.assert_not_called()
+
+    def test_authenticated_product_pricing_rejects_tampered_auth_domain_before_network(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            auth_path = Path(tmp_dir) / "audible-auth.json"
+            auth_path.write_text(
+                json.dumps(
+                    {
+                        "schemaVersion": 1,
+                        "status": "ready",
+                        "marketplace": "us",
+                        "domain": "example.com",
+                        "refreshToken": "refresh-secret",
+                        "accessToken": "access-secret",
+                        "expires": 4_102_444_800,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            if os.name == "posix":
+                os.chmod(auth_path, 0o600)
+            with mock.patch.object(audible_auth, "_post_form") as post_form:
+                with mock.patch.object(audible_auth, "_get_json") as get_json:
+                    with self.assertRaises(audible_auth.AudibleAuthError):
+                        audible_auth.authenticated_product_pricing(auth_path, "B0B6QGTNVS")
+        post_form.assert_not_called()
+        get_json.assert_not_called()
 
     def test_doctor_report_checks_config_inputs_auth_and_delivery(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

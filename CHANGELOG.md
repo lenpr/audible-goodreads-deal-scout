@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.13
+
+- Keep optional cookie-style Audible auth registration for member-visible prices without persisting website/store cookie payloads
+- Add auth status metadata that explains the credential purpose and allowed use without exposing token contents
+- Expand trust and README guidance for optional Audible authentication, including refresh-token and cookie-style credential handling
+
 ## 0.1.12
 
 - Restrict Audible fetches to known HTTPS Audible hosts and daily-deal/search/product paths before either Python or curl can request them

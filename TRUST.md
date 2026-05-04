@@ -45,8 +45,11 @@ Audible authentication is optional. The skill works without it, but anonymous Au
 If you choose to use authenticated price lookup:
 
 - the skill creates a local auth file through the `audible-auth-start` and `audible-auth-finish` helper flow
+- the auth flow requests cookie-style Audible/Amazon credential types for compatibility because anonymous Audible pages often hide member cash prices
+- the auth file persists the bearer access/refresh token fields used for token refresh and product-price lookup
 - the auth file is sensitive local state and should not be committed, pasted into chat, or published
-- the auth file is used only for Audible price lookup
+- the auth file is used only for token refresh and Audible product-price lookup
+- authenticated API calls are restricted in code to validated Audible product ids and allowlisted Audible/Amazon API domains
 - authenticated `discounted` means a member-visible cash price is below list price, not proof of a limited-time sale
 
 ## Purchase behavior

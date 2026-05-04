@@ -70,8 +70,8 @@ clawhub login
 clawhub publish . \
   --slug audible-goodreads-deal-scout \
   --name "Audible Goodreads Deal Scout" \
-  --version 0.1.12 \
-  --changelog "Add Audible URL guardrails, live fetch diagnostics, and fetch/test refactors." \
+  --version 0.1.13 \
+  --changelog "Constrain optional Audible auth use to price lookup and document credential boundaries." \
   --tags latest
 ```
 
@@ -276,6 +276,8 @@ Anonymous Audible pages often hide cash prices. If you want the Want-to-Read sca
 
 This does **not** put your Audible password in the skill config. The flow prints an Amazon login URL, you open it on another device, complete login there, and paste the final redirect URL back into the CLI.
 
+The resulting auth file is powerful local state: the flow requests cookie-style Audible/Amazon credential types for compatibility, then persists the bearer access/refresh token fields needed for token refresh and member-visible product-price lookup. The skill confines authenticated use to token refresh plus validated Audible product-price lookups on allowlisted API hosts, and `audible-auth-status` reports readiness without printing token contents.
+
 Start auth:
 
 ```bash
@@ -333,7 +335,7 @@ sh ./scripts/audible-goodreads-deal-scout.sh audible-auth-status \
   --fix-permissions
 ```
 
-The auth file is sensitive. Keep it under `.audible-goodreads-deal-scout/` in your OpenClaw workspace, do not commit it, and remove it if you no longer want the skill to have authenticated Audible API access.
+The auth file is sensitive. Keep it under `.audible-goodreads-deal-scout/` in your OpenClaw workspace, do not commit it, do not paste it into chat, and remove it if you no longer want the skill to have authenticated Audible API access.
 
 ## Supported marketplaces
 
@@ -574,7 +576,7 @@ Useful checks:
 ```bash
 sh ./scripts/audible-goodreads-deal-scout.sh doctor --config-path .audible-goodreads-deal-scout/config.json
 sh ./scripts/audible-goodreads-deal-scout.sh show-csv-headers "/absolute/path/to/goodreads_library_export.csv"
-sh ./scripts/audible-goodreads-deal-scout.sh publish-audit --version 0.1.12 --tags latest
+sh ./scripts/audible-goodreads-deal-scout.sh publish-audit --version 0.1.13 --tags latest
 ```
 
 `doctor` checks the configured config, CSV, notes, auth file, cache directory, delivery settings, cron settings, Audible fetch backend, local OpenClaw binary, and bundled shell wrapper. Add `--check-cron` when you want it to query live OpenClaw cron jobs.
@@ -608,7 +610,7 @@ Useful helper commands:
 sh ./scripts/audible-goodreads-deal-scout.sh doctor --config-path .audible-goodreads-deal-scout/config.json
 sh ./scripts/audible-goodreads-deal-scout.sh show-csv-headers "/absolute/path/to/goodreads_library_export.csv"
 sh ./scripts/audible-goodreads-deal-scout.sh measure-context --goodreads-csv "/absolute/path/to/goodreads_library_export.csv" --output /tmp/fit-context.json
-sh ./scripts/audible-goodreads-deal-scout.sh publish-audit --version 0.1.12
+sh ./scripts/audible-goodreads-deal-scout.sh publish-audit --version 0.1.13
 ```
 
 Finalize and deliver in one step:
@@ -647,10 +649,10 @@ sh ./scripts/audible-goodreads-deal-scout.sh run-and-deliver \
 Before publishing, run:
 
 ```bash
-sh ./scripts/audible-goodreads-deal-scout.sh publish-audit --version 0.1.12 --tags latest
+sh ./scripts/audible-goodreads-deal-scout.sh publish-audit --version 0.1.13 --tags latest
 ```
 
-For public auditability, create a matching Git tag and GitHub release for each ClawHub version, for example `v0.1.12`.
+For public auditability, create a matching Git tag and GitHub release for each ClawHub version, for example `v0.1.13`.
 
 ## Why this is worth publishing
 

@@ -49,11 +49,11 @@ The skill reads only the files and services needed for its configured workflow.
 | Goodreads CSV | Only when configured | Detects `read`, `currently-reading`, and `to-read` shelves and uses ratings/reviews for fit |
 | Taste notes | Only when configured | Adds personal reading preferences for fit explanations |
 | Audible pages | Deal checks and Want-to-Read scans | Fetches daily promotions, search results, product pages, and visible pricing signals |
-| Audible auth file | Optional, explicit authenticated scans only | Checks member-visible cash prices for matched Audible titles |
+| Audible auth file | Optional, explicit authenticated scans only | Checks member-visible cash prices for matched Audible titles through allowlisted token-refresh and Audible product-pricing API calls |
 | Goodreads public pages | Runtime lookup and optional rating enrichment | Resolves public rating evidence and fills missing Want-to-Read average ratings |
 | OpenClaw CLI | Optional delivery, cron, and diagnostics | Sends configured messages, registers requested cron jobs, and checks local readiness |
 
-The local auth file is sensitive. Do not paste its contents into chat, commit it, or publish it.
+The local auth file is sensitive. Do not paste its contents into chat, commit it, or publish it. The auth flow requests cookie-style Audible/Amazon credential types for compatibility because anonymous pages may hide member cash prices, but the skill persists only the bearer access/refresh token fields it uses for token refresh and Audible product-price lookup.
 
 For a fuller trust and data-access summary, see `TRUST.md` in the published bundle or repository.
 
@@ -61,7 +61,7 @@ For a fuller trust and data-access summary, see `TRUST.md` in the published bund
 
 Audible authentication is optional and separate from the normal daily-deal workflow. The skill works without it, but anonymous Audible pages often hide cash prices behind credit or membership UI.
 
-Use authenticated price lookup only when the user explicitly wants member-visible cash prices in Want-to-Read scans. Do not ask for the user's Audible or Amazon password. Use `audible-auth-start`, `audible-auth-finish`, and `audible-auth-status` instead.
+Use authenticated price lookup only when the user explicitly wants member-visible cash prices in Want-to-Read scans. Do not ask for the user's Audible or Amazon password. Use `audible-auth-start`, `audible-auth-finish`, and `audible-auth-status` instead. Never read or display the auth file contents; status commands intentionally report readiness, expiry, permissions, and allowed-use metadata without token values.
 
 ## Agent Runtime Instructions
 
@@ -196,6 +196,7 @@ Optional authenticated pricing:
 - Do not ask for the user's Audible or Amazon password.
 - Store the auth file under the workspace storage directory, for example `<workspace>/.audible-goodreads-deal-scout/audible-auth.json`.
 - Treat the auth file as sensitive and never paste its token contents into chat.
+- Authenticated lookup is code-restricted to validated 10-character Audible product ids, token refresh, and allowlisted Audible/Amazon API domains.
 - Authenticated scans usually spend one search request plus one authenticated price request for each matched title; set `--max-requests` accordingly.
 - Treat cash pricing fields as the source of truth and do not classify Audible credit prices, including `credit_price`, as cash discounts.
 - Treat authenticated `discounted` as "member-visible cash price below list price", not proof of a limited-time sale; check `pricing.dealType`.

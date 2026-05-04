@@ -4,6 +4,7 @@ import base64
 import hashlib
 import json
 import os
+import re
 import secrets
 import time
 import urllib.error
@@ -18,9 +19,14 @@ from .shared import normalize_space, redact_sensitive_payload, redact_sensitive_
 
 
 AUDIBLE_AUTH_SCHEMA_VERSION = 1
+AUDIBLE_AUTH_PURPOSE = "audible_member_price_lookup"
 AUDIBLE_IOS_DEVICE_TYPE = "A2CZJZGLK2JJVM"
 AUDIBLE_IOS_APP_VERSION = "3.56.2"
 AUDIBLE_IOS_SOFTWARE_VERSION = "35602678"
+AUDIBLE_PRODUCT_RESPONSE_GROUPS = (
+    "price,product_attrs,product_desc,contributors,customer_rights,product_plan_details,product_plans"
+)
+AUDIBLE_PRODUCT_ID_RE = re.compile(r"^[A-Z0-9]{10}$")
 SUPPORTED_AUTH_MARKETPLACES = {
     "us": {
         "countryCode": "us",
@@ -33,6 +39,59 @@ SUPPORTED_AUTH_MARKETPLACES = {
 
 class AudibleAuthError(RuntimeError):
     pass
+
+
+def _auth_marketplace_spec(marketplace: Any) -> dict[str, str]:
+    normalized = normalize_space(str(marketplace or "")).lower() or "us"
+    spec = SUPPORTED_AUTH_MARKETPLACES.get(normalized)
+    if not spec:
+        supported = ", ".join(sorted(SUPPORTED_AUTH_MARKETPLACES))
+        raise AudibleAuthError(f"Authenticated Audible price lookup supports: {supported}.")
+    return spec
+
+
+def _validate_auth_domain(domain: Any, *, marketplace: Any = None) -> str:
+    normalized = normalize_space(str(domain or "")).lower()
+    if not normalized:
+        raise AudibleAuthError("Audible auth file is missing marketplace domain.")
+    if marketplace is not None:
+        spec = _auth_marketplace_spec(marketplace)
+        if normalized != spec["domain"]:
+            raise AudibleAuthError("Audible auth file marketplace/domain mismatch.")
+        return normalized
+    supported_domains = {str(spec["domain"]) for spec in SUPPORTED_AUTH_MARKETPLACES.values()}
+    if normalized not in supported_domains:
+        supported = ", ".join(sorted(supported_domains))
+        raise AudibleAuthError(f"Authenticated Audible price lookup supports domains: {supported}.")
+    return normalized
+
+
+def _normalize_product_id(product_id: str) -> str:
+    normalized = normalize_space(product_id).upper()
+    if not normalized:
+        raise AudibleAuthError("Missing Audible ASIN/product id for authenticated price lookup.")
+    if not AUDIBLE_PRODUCT_ID_RE.fullmatch(normalized):
+        raise AudibleAuthError("Audible ASIN/product id must be exactly 10 uppercase letters or digits.")
+    return normalized
+
+
+def auth_credential_metadata() -> dict[str, Any]:
+    return {
+        "purpose": AUDIBLE_AUTH_PURPOSE,
+        "allowedUse": "audible_product_price_lookup_only",
+        "allowedHosts": sorted(
+            {
+                f"api.amazon.{spec['domain']}"
+                for spec in SUPPORTED_AUTH_MARKETPLACES.values()
+            }
+            | {f"api.audible.{spec['domain']}" for spec in SUPPORTED_AUTH_MARKETPLACES.values()}
+        ),
+        "allowedEndpoints": ["/auth/token", "/1.0/catalog/products/<asin>"],
+        "storesRefreshToken": True,
+        "requestsCookieStyleCredentials": True,
+        "persistsCookieStyleCredentials": False,
+        "tokenContentsExposedByStatus": False,
+    }
 
 
 def _now_iso() -> str:
@@ -118,10 +177,7 @@ def build_client_id(serial: str) -> str:
 
 
 def build_external_login_url(*, marketplace: str, serial: str, code_verifier: str) -> str:
-    spec = SUPPORTED_AUTH_MARKETPLACES.get(marketplace)
-    if not spec:
-        supported = ", ".join(sorted(SUPPORTED_AUTH_MARKETPLACES))
-        raise AudibleAuthError(f"Authenticated Audible price lookup supports: {supported}.")
+    spec = _auth_marketplace_spec(marketplace)
     domain = spec["domain"]
     country_code = spec["countryCode"]
     client_id = build_client_id(serial)
@@ -150,16 +206,15 @@ def build_external_login_url(*, marketplace: str, serial: str, code_verifier: st
 
 def start_external_auth(auth_path: Path, *, marketplace: str = "us") -> dict[str, Any]:
     marketplace = normalize_space(marketplace).lower() or "us"
-    spec = SUPPORTED_AUTH_MARKETPLACES.get(marketplace)
-    if not spec:
-        supported = ", ".join(sorted(SUPPORTED_AUTH_MARKETPLACES))
-        raise AudibleAuthError(f"Authenticated Audible price lookup supports: {supported}.")
+    spec = _auth_marketplace_spec(marketplace)
     serial = uuid.uuid4().hex.upper()
     code_verifier = create_code_verifier()
     login_url = build_external_login_url(marketplace=marketplace, serial=serial, code_verifier=code_verifier)
     payload = {
         "schemaVersion": AUDIBLE_AUTH_SCHEMA_VERSION,
         "status": "pending_external_login",
+        "purpose": AUDIBLE_AUTH_PURPOSE,
+        "credentialMetadata": auth_credential_metadata(),
         "createdAt": _now_iso(),
         "updatedAt": _now_iso(),
         "marketplace": marketplace,
@@ -193,6 +248,7 @@ def authorization_code_from_redirect(redirect_url: str) -> str:
 
 
 def register_device(*, authorization_code: str, code_verifier: str, domain: str, serial: str) -> dict[str, Any]:
+    domain = _validate_auth_domain(domain)
     body = {
         "requested_token_type": [
             "bearer",
@@ -244,19 +300,22 @@ def finish_external_auth(auth_path: Path, *, redirect_url: str) -> dict[str, Any
     if pending.get("status") != "pending_external_login":
         raise AudibleAuthError(f"Audible auth file at {path} is not waiting for external login.")
     authorization_code = authorization_code_from_redirect(redirect_url)
+    domain = _validate_auth_domain(pending.get("domain"), marketplace=pending.get("marketplace") or "us")
     registered = register_device(
         authorization_code=authorization_code,
         code_verifier=str(pending["codeVerifier"]),
-        domain=str(pending["domain"]),
+        domain=domain,
         serial=str(pending["serial"]),
     )
     payload = {
         "schemaVersion": AUDIBLE_AUTH_SCHEMA_VERSION,
         "status": "ready",
+        "purpose": AUDIBLE_AUTH_PURPOSE,
+        "credentialMetadata": auth_credential_metadata(),
         "createdAt": pending.get("createdAt") or _now_iso(),
         "updatedAt": _now_iso(),
         "marketplace": pending.get("marketplace") or "us",
-        "domain": pending["domain"],
+        "domain": domain,
         "marketPlaceId": pending["marketPlaceId"],
         "serial": pending["serial"],
         **registered,
@@ -305,6 +364,7 @@ def auth_file_status(auth_path: Path, *, fix_permissions: bool = False) -> dict[
             "secondsRemaining": None,
             "permissionMode": None,
             "permissionSecure": None,
+            "credentialMetadata": auth_credential_metadata(),
             "warnings": warnings,
             "errors": [f"Audible auth file not found at {path}."],
         }
@@ -322,6 +382,7 @@ def auth_file_status(auth_path: Path, *, fix_permissions: bool = False) -> dict[
             "secondsRemaining": None,
             "permissionMode": permission_mode,
             "permissionSecure": permission_secure,
+            "credentialMetadata": auth_credential_metadata(),
             "warnings": warnings,
             "errors": [str(exc)],
         }
@@ -346,6 +407,11 @@ def auth_file_status(auth_path: Path, *, fix_permissions: bool = False) -> dict[
         errors.append(f"Auth file status is {status!r}, not 'ready'.")
     if status == "ready" and not payload.get("refreshToken"):
         errors.append("Auth file is missing refreshToken.")
+    if status == "ready":
+        try:
+            _validate_auth_domain(payload.get("domain"), marketplace=payload.get("marketplace") or "us")
+        except AudibleAuthError as exc:
+            errors.append(str(exc))
     if permission_secure is False:
         errors.append("Auth file permissions are too broad.")
     return {
@@ -364,6 +430,7 @@ def auth_file_status(auth_path: Path, *, fix_permissions: bool = False) -> dict[
         "secondsRemaining": seconds_remaining,
         "permissionMode": permission_mode,
         "permissionSecure": permission_secure,
+        "credentialMetadata": auth_credential_metadata(),
         "warnings": warnings,
         "errors": errors,
     }
@@ -375,6 +442,7 @@ def load_ready_auth(auth_path: Path) -> dict[str, Any]:
         raise AudibleAuthError(f"Audible auth file at {auth_path} is not ready. Run audible-auth-start/finish first.")
     if not payload.get("refreshToken"):
         raise AudibleAuthError(f"Audible auth file at {auth_path} is missing refreshToken.")
+    _validate_auth_domain(payload.get("domain"), marketplace=payload.get("marketplace") or "us")
     return payload
 
 
@@ -384,7 +452,7 @@ def refresh_access_token(auth_path: Path, *, force: bool = False) -> dict[str, A
     expires = float(payload.get("expires") or 0)
     if not force and expires - time.time() > 120:
         return payload
-    domain = str(payload.get("domain") or "com")
+    domain = _validate_auth_domain(payload.get("domain"), marketplace=payload.get("marketplace") or "us")
     response = _post_form(
         f"https://api.amazon.{domain}/auth/token",
         {
@@ -502,14 +570,12 @@ def parse_authenticated_pricing(product_payload: dict[str, Any], *, threshold: i
 
 
 def authenticated_product_pricing(auth_path: Path, asin: str, *, threshold: int = 10) -> dict[str, Any]:
+    asin = _normalize_product_id(asin)
     auth = refresh_access_token(auth_path)
-    domain = str(auth.get("domain") or "com")
-    asin = normalize_space(asin)
-    if not asin:
-        raise AudibleAuthError("Missing Audible ASIN/product id for authenticated price lookup.")
+    domain = _validate_auth_domain(auth.get("domain"), marketplace=auth.get("marketplace") or "us")
     query = urllib.parse.urlencode(
         {
-            "response_groups": "price,product_attrs,product_desc,contributors,customer_rights,product_plan_details,product_plans",
+            "response_groups": AUDIBLE_PRODUCT_RESPONSE_GROUPS,
         }
     )
     url = f"https://api.audible.{domain}/1.0/catalog/products/{urllib.parse.quote(asin)}?{query}"
