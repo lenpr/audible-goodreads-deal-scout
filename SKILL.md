@@ -2,7 +2,7 @@
 name: audible-goodreads-deal-scout
 description: Evaluate an Audible daily promotion against Goodreads public score, optional Goodreads CSV shelves, optional freeform reading notes, optional delivery rules, and manual Want-to-Read discount scans. Use for first-run setup, deal checks, scheduled sends, and on-demand Goodreads backlog audits.
 license: MIT-0
-metadata: {"openclaw":{"emoji":"🎧","skillKey":"audible-goodreads-deal-scout","homepage":"https://github.com/lenpr/audible-goodreads-deal-scout","category":"media","requires":{"anyBins":["python3","python"]}}}
+metadata: {"openclaw":{"emoji":"🎧","skillKey":"audible-goodreads-deal-scout","homepage":"https://github.com/lenpr/audible-goodreads-deal-scout","category":"media","requires":{"bins":["sh"],"anyBins":["python3","python"]}}}
 ---
 
 # Audible Goodreads Deal Scout
@@ -220,6 +220,12 @@ sh "{baseDir}/scripts/audible-goodreads-deal-scout.sh" doctor \
 
 sh "{baseDir}/scripts/audible-goodreads-deal-scout.sh" audible-auth-status \
   --auth-path "<workspace>/.audible-goodreads-deal-scout/audible-auth.json"
+```
+
+To verify the installed bundle version:
+
+```bash
+sh "{baseDir}/scripts/audible-goodreads-deal-scout.sh" version
 ```
 
 Use `doctor --check-audible-fetch` only when the user wants a live host probe of the Audible daily-deal fetch path.

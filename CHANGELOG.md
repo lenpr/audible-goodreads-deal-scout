@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.14
+
+- Resolve the OpenClaw CLI from common user install locations such as `~/.npm-global/bin/openclaw` when non-interactive PATHs omit it
+- Add a `version` command and include `skillVersion` in `doctor` output for installed-bundle checks
+- Improve live cron diagnostics so disabled related jobs are reported separately from missing jobs
+- Declare `sh` in skill requirements because the documented launcher uses the shell wrapper
+
 ## 0.1.13
 
 - Keep optional cookie-style Audible auth registration for member-visible prices without persisting website/store cookie payloads

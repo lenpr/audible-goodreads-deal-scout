@@ -5,6 +5,7 @@ import json
 import sys
 from pathlib import Path
 
+from . import __version__
 from . import core
 from .audible_auth import auth_file_status, finish_external_auth, start_external_auth, test_authenticated_price
 from .cli_errors import cli_error_payload
@@ -181,7 +182,7 @@ def build_parser() -> argparse.ArgumentParser:
         "publish-audit",
         help="Check that the skill bundle is shaped correctly for ClawHub publishing.",
     )
-    audit_parser.add_argument("--version", default="0.1.13")
+    audit_parser.add_argument("--version", default=__version__)
     audit_parser.add_argument("--tags", default="latest")
 
     finalize_parser = subparsers.add_parser(
@@ -215,6 +216,8 @@ def build_parser() -> argparse.ArgumentParser:
     run_and_deliver_parser.add_argument("--delivery-policy")
     run_and_deliver_parser.add_argument("--openclaw-bin", default="openclaw")
     run_and_deliver_parser.add_argument("--dry-run", action="store_true")
+
+    subparsers.add_parser("version", help="Print the bundled skill CLI version.")
     return parser
 
 
@@ -423,6 +426,11 @@ def command_doctor(args: argparse.Namespace) -> int:
     )
     print(json.dumps(result, indent=2, sort_keys=True, ensure_ascii=False))
     return 0 if result.get("ok") else 1
+
+
+def command_version(_: argparse.Namespace) -> int:
+    print(json.dumps({"ok": True, "version": __version__}, indent=2, sort_keys=True, ensure_ascii=False))
+    return 0
 
 
 def command_mark_emitted(args: argparse.Namespace) -> int:
@@ -668,6 +676,8 @@ def main(argv: list[str] | None = None) -> int:
             return command_audible_auth_status(args)
         if args.command == "doctor":
             return command_doctor(args)
+        if args.command == "version":
+            return command_version(args)
         if args.command == "mark-emitted":
             return command_mark_emitted(args)
         if args.command == "publish-audit":

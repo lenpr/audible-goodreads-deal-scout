@@ -214,6 +214,22 @@ class AudibleGoodreadsDealScoutTests(unittest.TestCase):
         self.assertFalse(registration["created"])
         self.assertEqual(registration["existingJob"]["id"], "job-1")
 
+    def test_resolve_openclaw_bin_uses_common_user_install_path(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            fallback = tmp / ".npm-global" / "bin" / "openclaw"
+            fallback.parent.mkdir(parents=True)
+            fallback.write_text("#!/bin/sh\n", encoding="utf-8")
+            if os.name == "posix":
+                os.chmod(fallback, 0o755)
+            with (
+                mock.patch.object(delivery_mod.Path, "home", return_value=tmp),
+                mock.patch.object(delivery_mod.shutil, "which", return_value=None),
+                mock.patch.dict(os.environ, {}, clear=True),
+            ):
+                resolved = delivery_mod.resolve_openclaw_bin("openclaw")
+        self.assertEqual(resolved, str(fallback))
+
     def test_resolve_delivery_settings_prefers_explicit_overrides(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp = Path(tmp_dir)
@@ -304,6 +320,14 @@ class AudibleGoodreadsDealScoutTests(unittest.TestCase):
         self.assertTrue(payload["privacyAudit"]["ok"])
         self.assertIn("clawhub publish", payload["recommendedPublishCommand"])
         self.assertTrue(payload["recommendedPublishCommand"].startswith("clawhub publish . "))
+
+    def test_version_command_reports_package_version(self) -> None:
+        stdout = io.StringIO()
+        with mock.patch("sys.stdout", stdout):
+            rc = public_cli.main(["version"])
+        self.assertEqual(rc, 0)
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(payload["version"], public_cli.__version__)
 
     def test_repo_audit_detects_private_machine_markers(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -1760,6 +1784,46 @@ class WantToReadScanTests(unittest.TestCase):
         self.assertEqual(report["checks"]["csv"]["status"], "ok")
         self.assertTrue(report["checks"]["auth"]["ready"])
         self.assertEqual(report["checks"]["delivery"]["status"], "configured")
+
+    def test_doctor_report_surfaces_disabled_live_cron_job(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            config_path = tmp / "config.json"
+            state_file = tmp / "state.json"
+            spec = core.validate_marketplace("us")
+            config_path.write_text(
+                json.dumps(
+                    {
+                        "audibleMarketplace": "us",
+                        "dailyCron": spec["defaultCron"],
+                        "stateFile": str(state_file),
+                    }
+                ),
+                encoding="utf-8",
+            )
+            message = core.build_cron_message(config_path.resolve(), state_file)
+            jobs = [
+                {
+                    "id": "job-disabled",
+                    "name": "Daily Audible deal watch",
+                    "enabled": False,
+                    "schedule": {"expr": spec["defaultCron"], "tz": spec["timezone"]},
+                    "payload": {"message": message},
+                }
+            ]
+            with (
+                mock.patch.object(diagnostics, "curl_available", return_value=True),
+                mock.patch.object(diagnostics, "list_cron_jobs", return_value=jobs),
+            ):
+                report = diagnostics.doctor_report(
+                    config_path=config_path,
+                    openclaw_bin=sys.executable,
+                    check_live_cron=True,
+                )
+        self.assertFalse(report["ok"])
+        self.assertEqual(report["checks"]["cron"]["status"], "disabled")
+        self.assertEqual(report["checks"]["cron"]["disabledMatches"][0]["id"], "job-disabled")
+        self.assertEqual(report["errors"], ["cron: disabled"])
 
     def test_doctor_report_can_check_live_audible_fetch(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

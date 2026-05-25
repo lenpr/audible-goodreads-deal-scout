@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import json
-import shutil
+import os
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from . import __version__
 from .audible_auth import auth_file_status
 from .audible_fetch import (
     SUPPORTED_AUDIBLE_FETCH_BACKENDS,
@@ -14,7 +15,7 @@ from .audible_fetch import (
     curl_available,
     fetch_text_with_final_url,
 )
-from .delivery import build_cron_message, list_cron_jobs
+from .delivery import build_cron_message, list_cron_jobs, resolve_openclaw_bin
 from .settings import default_config_path, default_storage_dir, load_config, skill_root, validate_marketplace
 from .shared import normalize_space
 
@@ -67,12 +68,16 @@ def _storage_dir_for(config_path: Path, config: dict[str, Any]) -> Path:
 
 
 def _openclaw_check(openclaw_bin: str) -> dict[str, Any]:
-    resolved = shutil.which(openclaw_bin) if "/" not in openclaw_bin else (openclaw_bin if Path(openclaw_bin).exists() else None)
+    resolved = resolve_openclaw_bin(openclaw_bin)
+    executable_path = Path(resolved).expanduser()
+    executable = "/" in resolved and executable_path.exists() and os.access(executable_path, os.X_OK)
+    found = executable or resolved != (normalize_space(openclaw_bin) or "openclaw")
     return {
-        "ok": bool(resolved),
-        "status": "ok" if resolved else "missing",
+        "ok": bool(found),
+        "status": "ok" if found else "missing",
         "bin": openclaw_bin,
-        "resolvedPath": resolved,
+        "resolvedPath": resolved if found else None,
+        "usedFallback": resolved != (normalize_space(openclaw_bin) or "openclaw"),
     }
 
 
@@ -177,24 +182,43 @@ def _cron_check(
         jobs = list_cron_jobs(openclaw_bin)
     except Exception as exc:
         return {**result, "ok": False, "status": "cron_list_failed", "error": str(exc)}
-    matches = []
+    active_matches = []
+    disabled_matches = []
+    config_path_text = str(config_path)
     for job in jobs:
         payload = job.get("payload") if isinstance(job.get("payload"), dict) else {}
         message = normalize_space(str(payload.get("message") or payload.get("text") or ""))
-        if str(config_path) in message or expected_message == message:
-            matches.append(
-                {
-                    "id": job.get("id"),
-                    "name": job.get("name"),
-                    "enabled": job.get("enabled"),
-                    "schedule": job.get("schedule"),
-                }
-            )
+        schedule = job.get("schedule") if isinstance(job.get("schedule"), dict) else {}
+        name = normalize_space(str(job.get("name") or ""))
+        looks_related = (
+            config_path_text in message
+            or expected_message == message
+            or "audible-goodreads-deal-scout" in message
+            or "audible" in name.casefold()
+        )
+        if not looks_related:
+            continue
+        match = {
+            "id": job.get("id"),
+            "name": job.get("name"),
+            "enabled": job.get("enabled"),
+            "schedule": schedule,
+            "messageMatchesConfig": config_path_text in message or expected_message == message,
+            "scheduleMatchesConfig": normalize_space(str(schedule.get("cron") or schedule.get("expr") or "")) == cron_expr,
+            "timezoneMatchesMarketplace": normalize_space(str(schedule.get("tz") or "")) == spec["timezone"],
+        }
+        if job.get("enabled"):
+            active_matches.append(match)
+        else:
+            disabled_matches.append(match)
+    ok = bool(active_matches)
+    status = "matched" if active_matches else ("disabled" if disabled_matches else "not_found")
     return {
         **result,
-        "ok": bool(matches),
-        "status": "matched" if matches else "not_found",
-        "matches": matches,
+        "ok": ok,
+        "status": status,
+        "matches": active_matches,
+        "disabledMatches": disabled_matches,
     }
 
 
@@ -286,6 +310,7 @@ def doctor_report(
     ok = not errors
     return {
         "schemaVersion": 1,
+        "skillVersion": __version__,
         "ok": ok,
         "status": "ok" if ok and not warnings else ("warning" if ok else "error"),
         "reasonCode": "doctor_ok" if ok else "doctor_failed",

@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import os
 import shlex
+import shutil
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -17,6 +19,35 @@ from .settings import (
     validate_timezone,
 )
 from .shared import atomic_write_text, ensure_python_version, normalize_space, write_json_atomic
+
+
+def resolve_openclaw_bin(openclaw_bin: str = "openclaw") -> str:
+    env_bin = normalize_space(os.environ.get("OPENCLAW_BIN"))
+    requested = normalize_space(openclaw_bin) or "openclaw"
+    candidates: list[str] = []
+    if env_bin and requested == "openclaw":
+        candidates.append(env_bin)
+    candidates.append(requested)
+    home = Path.home()
+    candidates.extend(
+        [
+            str(home / ".npm-global" / "bin" / "openclaw"),
+            str(home / ".local" / "bin" / "openclaw"),
+            "/usr/local/bin/openclaw",
+        ]
+    )
+    for candidate in candidates:
+        if not candidate:
+            continue
+        expanded = str(Path(candidate).expanduser()) if "/" in candidate else candidate
+        if "/" in expanded:
+            if Path(expanded).exists() and os.access(expanded, os.X_OK):
+                return expanded
+            continue
+        resolved = shutil.which(expanded)
+        if resolved:
+            return resolved
+    return requested
 
 
 def build_cron_message(config_path: Path, state_file: Path) -> str:
@@ -36,8 +67,9 @@ def build_cron_command(
     cron_expr: str | None = None,
 ) -> list[str]:
     validate_timezone(spec)
+    resolved_openclaw_bin = resolve_openclaw_bin(openclaw_bin)
     return [
-        openclaw_bin,
+        resolved_openclaw_bin,
         "--no-color",
         "cron",
         "add",
@@ -57,8 +89,9 @@ def build_cron_command(
 
 
 def list_cron_jobs(openclaw_bin: str) -> list[dict[str, Any]]:
+    resolved_openclaw_bin = resolve_openclaw_bin(openclaw_bin)
     proc = subprocess.run(
-        [openclaw_bin, "--no-color", "cron", "list", "--json"],
+        [resolved_openclaw_bin, "--no-color", "cron", "list", "--json"],
         capture_output=True,
         text=True,
         timeout=30,
@@ -90,9 +123,10 @@ def find_matching_cron_job(
         job_name = normalize_space(str(job.get("name") or ""))
         schedule = job.get("schedule") if isinstance(job.get("schedule"), dict) else {}
         payload = job.get("payload") if isinstance(job.get("payload"), dict) else {}
+        job_cron = normalize_space(str(schedule.get("cron") or schedule.get("expr") or ""))
         if (
             job_name == name
-            and normalize_space(str(schedule.get("cron") or "")) == cron_expr
+            and job_cron == cron_expr
             and normalize_space(str(schedule.get("tz") or "")) == timezone_name
             and normalize_space(str(payload.get("message") or payload.get("text") or "")) == message
         ):
@@ -348,7 +382,7 @@ def deliver_message(
     if not normalized_message:
         raise RuntimeError("Cannot deliver an empty message.")
     command = [
-        openclaw_bin,
+        resolve_openclaw_bin(openclaw_bin),
         "message",
         "send",
         "--channel",
