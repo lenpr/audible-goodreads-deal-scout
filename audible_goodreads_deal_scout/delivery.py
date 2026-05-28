@@ -241,38 +241,64 @@ def setup_configuration(
     register_cron: bool = False,
 ) -> dict[str, Any]:
     ensure_python_version()
-    marketplace = normalize_space(str(options.get("audibleMarketplace") or "us")).lower() or "us"
+    initial_storage_dir = Path(str(options.get("storageDir") or default_storage_dir())).expanduser()
+    config_path = Path(str(options.get("configPath") or initial_storage_dir / "config.json")).expanduser()
+    existing_config: dict[str, Any] = {}
+    if config_path.exists():
+        try:
+            loaded = json.loads(config_path.read_text(encoding="utf-8"))
+            if isinstance(loaded, dict):
+                existing_config = loaded
+        except Exception:
+            existing_config = {}
+
+    def option_or_existing(key: str, default: Any = None) -> Any:
+        value = options.get(key)
+        if value not in (None, "", {}):
+            return value
+        existing = existing_config.get(key)
+        if existing not in (None, "", {}):
+            return existing
+        return default
+
+    marketplace = normalize_space(str(option_or_existing("audibleMarketplace", "us"))).lower() or "us"
     spec = validate_marketplace(marketplace)
-    storage_dir = Path(str(options.get("storageDir") or default_storage_dir())).expanduser()
-    config_path = Path(str(options.get("configPath") or storage_dir / "config.json")).expanduser()
-    state_file = Path(str(options.get("stateFile") or storage_dir / "state.json")).expanduser()
-    preferences_path = Path(str(options.get("preferencesPath") or storage_dir / "preferences.md")).expanduser()
-    threshold = float(options.get("threshold") or DEFAULT_THRESHOLD)
-    privacy_mode = normalize_space(str(options.get("privacyMode") or "normal")).lower() or "normal"
+    if options.get("storageDir"):
+        storage_dir = Path(str(options["storageDir"])).expanduser()
+    elif options.get("configPath"):
+        storage_dir = config_path.parent
+    else:
+        storage_dir = initial_storage_dir
+    state_file = Path(str(option_or_existing("stateFile", storage_dir / "state.json"))).expanduser()
+    preferences_path = Path(str(option_or_existing("preferencesPath", storage_dir / "preferences.md"))).expanduser()
+    threshold = float(option_or_existing("threshold", DEFAULT_THRESHOLD))
+    privacy_mode = normalize_space(str(option_or_existing("privacyMode", "normal"))).lower() or "normal"
     notes_file = normalize_space(str(options.get("notesFile") or ""))
     notes_text = resolve_notes_text(notes_file, str(options.get("notesText") or ""))
-    goodreads_csv = normalize_space(str(options.get("goodreadsCsvPath") or ""))
-    daily_enabled = bool(options.get("dailyAutomation"))
-    cron_expr = normalize_space(str(options.get("dailyCron") or spec["defaultCron"]))
-    artifact_dir = Path(str(options.get("artifactDir") or storage_dir / "artifacts" / "current")).expanduser()
-    delivery_channel = normalize_space(str(options.get("deliveryChannel") or ""))
-    delivery_target = normalize_space(str(options.get("deliveryTarget") or ""))
-    delivery_policy = normalize_delivery_policy(str(options.get("deliveryPolicy") or DEFAULT_DELIVERY_POLICY))
+    goodreads_csv = normalize_space(str(option_or_existing("goodreadsCsvPath", "")))
+    daily_enabled = bool(options.get("dailyAutomation") or existing_config.get("dailyCron") or existing_config.get("stateFile"))
+    cron_expr = normalize_space(str(option_or_existing("dailyCron", spec["defaultCron"])))
+    artifact_dir = Path(str(option_or_existing("artifactDir", storage_dir / "artifacts" / "current"))).expanduser()
+    delivery_channel = normalize_space(str(option_or_existing("deliveryChannel", "")))
+    delivery_target = normalize_space(str(option_or_existing("deliveryTarget", "")))
+    delivery_policy = normalize_delivery_policy(str(option_or_existing("deliveryPolicy", DEFAULT_DELIVERY_POLICY)))
+    csv_columns = option_or_existing("csvColumns", {})
     if notes_text:
         notes_text = notes_text.rstrip() + "\n"
+    preferences_config_path = str(preferences_path) if notes_text else existing_config.get("preferencesPath")
     config_payload = config_template(
         audibleMarketplace=spec["key"],
         threshold=threshold,
         goodreadsCsvPath=goodreads_csv or None,
-        preferencesPath=str(preferences_path) if notes_text else None,
+        preferencesPath=preferences_config_path,
         privacyMode=privacy_mode if privacy_mode in SUPPORTED_PRIVACY_MODES else "normal",
         stateFile=str(state_file) if daily_enabled else None,
         artifactDir=str(artifact_dir),
-        freshnessDays=int(options.get("freshnessDays") or DEFAULT_FRESHNESS_DAYS),
-        csvColumns=options.get("csvColumns") or {},
-        audibleDealUrl=options.get("audibleDealUrl") or None,
-        audibleFetchBackend=options.get("audibleFetchBackend") or "auto",
-        audibleAuthPath=options.get("audibleAuthPath") or None,
+        freshnessDays=int(option_or_existing("freshnessDays", DEFAULT_FRESHNESS_DAYS)),
+        csvColumns=csv_columns if isinstance(csv_columns, dict) else {},
+        audibleDealUrl=option_or_existing("audibleDealUrl"),
+        audibleFetchBackend=option_or_existing("audibleFetchBackend", "auto"),
+        audibleAuthPath=option_or_existing("audibleAuthPath"),
         dailyCron=cron_expr if daily_enabled else None,
         deliveryChannel=delivery_channel or None,
         deliveryTarget=delivery_target or None,

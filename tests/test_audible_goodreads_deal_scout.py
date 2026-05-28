@@ -214,6 +214,43 @@ class AudibleGoodreadsDealScoutTests(unittest.TestCase):
         self.assertFalse(registration["created"])
         self.assertEqual(registration["existingJob"]["id"], "job-1")
 
+    def test_setup_preserves_existing_config_when_registering_cron(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            config_path = tmp / "config.json"
+            csv_path = tmp / "goodreads.csv"
+            auth_path = tmp / "audible-auth.json"
+            csv_path.write_text("Book Id,Title\n", encoding="utf-8")
+            auth_path.write_text("{}", encoding="utf-8")
+            core.write_json_atomic(
+                config_path,
+                {
+                    "audibleMarketplace": "us",
+                    "goodreadsCsvPath": str(csv_path),
+                    "audibleAuthPath": str(auth_path),
+                    "privacyMode": "normal",
+                    "dailyCron": "0 12 * * *",
+                    "stateFile": str(tmp / "state.json"),
+                    "artifactDir": str(tmp / "artifacts" / "current"),
+                    "deliveryChannel": "telegram",
+                    "deliveryTarget": "-1000000000000",
+                    "deliveryPolicy": "positive_only",
+                    "csvColumns": {"title": "Title"},
+                },
+            )
+            result = core.setup_configuration(
+                {"configPath": str(config_path), "dailyAutomation": True},
+                register_cron=False,
+            )
+            restored = json.loads(config_path.read_text(encoding="utf-8"))
+        self.assertTrue(result["written"])
+        self.assertEqual(restored["goodreadsCsvPath"], str(csv_path))
+        self.assertEqual(restored["audibleAuthPath"], str(auth_path))
+        self.assertEqual(restored["deliveryChannel"], "telegram")
+        self.assertEqual(restored["deliveryTarget"], "-1000000000000")
+        self.assertEqual(restored["dailyCron"], "0 12 * * *")
+        self.assertEqual(restored["csvColumns"], {"title": "Title"})
+
     def test_resolve_openclaw_bin_uses_common_user_install_path(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp = Path(tmp_dir)

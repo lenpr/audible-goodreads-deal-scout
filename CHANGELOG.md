@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.15
+
+- Preserve existing config values when rerunning setup or registering cron from an existing config path
+- Prevent cron registration from accidentally dropping Goodreads CSV, delivery, auth, or CSV column settings when omitted from a follow-up setup command
+
 ## 0.1.14
 
 - Resolve the OpenClaw CLI from common user install locations such as `~/.npm-global/bin/openclaw` when non-interactive PATHs omit it

@@ -70,8 +70,8 @@ clawhub login
 clawhub publish . \
   --slug audible-goodreads-deal-scout \
   --name "Audible Goodreads Deal Scout" \
-  --version 0.1.14 \
-  --changelog "Harden OpenClaw CLI discovery, add installed-version diagnostics, and surface disabled cron jobs." \
+  --version 0.1.15 \
+  --changelog "Preserve existing config values when registering cron from an existing setup." \
   --tags latest
 ```
 
@@ -576,7 +576,7 @@ Useful checks:
 ```bash
 sh ./scripts/audible-goodreads-deal-scout.sh doctor --config-path .audible-goodreads-deal-scout/config.json
 sh ./scripts/audible-goodreads-deal-scout.sh show-csv-headers "/absolute/path/to/goodreads_library_export.csv"
-sh ./scripts/audible-goodreads-deal-scout.sh publish-audit --version 0.1.14 --tags latest
+sh ./scripts/audible-goodreads-deal-scout.sh publish-audit --version 0.1.15 --tags latest
 ```
 
 `doctor` checks the configured config, CSV, notes, auth file, cache directory, delivery settings, cron settings, Audible fetch backend, local OpenClaw binary, bundled shell wrapper, and installed skill version. Add `--check-cron` when you want it to query live OpenClaw cron jobs; disabled related jobs are reported separately from missing jobs.
@@ -610,7 +610,7 @@ Useful helper commands:
 sh ./scripts/audible-goodreads-deal-scout.sh doctor --config-path .audible-goodreads-deal-scout/config.json
 sh ./scripts/audible-goodreads-deal-scout.sh show-csv-headers "/absolute/path/to/goodreads_library_export.csv"
 sh ./scripts/audible-goodreads-deal-scout.sh measure-context --goodreads-csv "/absolute/path/to/goodreads_library_export.csv" --output /tmp/fit-context.json
-sh ./scripts/audible-goodreads-deal-scout.sh publish-audit --version 0.1.14
+sh ./scripts/audible-goodreads-deal-scout.sh publish-audit --version 0.1.15
 ```
 
 Finalize and deliver in one step:
@@ -649,10 +649,10 @@ sh ./scripts/audible-goodreads-deal-scout.sh run-and-deliver \
 Before publishing, run:
 
 ```bash
-sh ./scripts/audible-goodreads-deal-scout.sh publish-audit --version 0.1.14 --tags latest
+sh ./scripts/audible-goodreads-deal-scout.sh publish-audit --version 0.1.15 --tags latest
 ```
 
-For public auditability, create a matching Git tag and GitHub release for each ClawHub version, for example `v0.1.14`.
+For public auditability, create a matching Git tag and GitHub release for each ClawHub version, for example `v0.1.15`.
 
 ## Why this is worth publishing
 
