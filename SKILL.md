@@ -151,6 +151,8 @@ sh "{baseDir}/scripts/audible-goodreads-deal-scout.sh" setup \
 
 Use interactive `setup` only when the user explicitly wants prompt-by-prompt CLI onboarding. Otherwise prefer the non-interactive command with concrete flags.
 
+Before enabling daily automation, make sure the user's OpenClaw host can run scheduled exec commands unattended. Cron runs cannot wait for Telegram or app-server command approval. On a trusted local OpenClaw box, the user may need an explicit Codex app-server policy such as `plugins.entries.codex.config.appServer.approvalPolicy: "never"` with `sandbox: "danger-full-access"`, or an equivalent allowlist for the exact shell command OpenClaw uses.
+
 ## Want-to-Read discount scan
 
 Use this only when the user asks to scan Goodreads Want-to-Read books for Audible discounts. This is a manual audit command, not a cron or delivery workflow.

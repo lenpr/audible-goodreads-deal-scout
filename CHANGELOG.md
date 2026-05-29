@@ -4,6 +4,7 @@
 
 - Preserve existing config values when rerunning setup or registering cron from an existing config path
 - Prevent cron registration from accidentally dropping Goodreads CSV, delivery, auth, or CSV column settings when omitted from a follow-up setup command
+- Clarify that unattended OpenClaw/Codex cron runs need a non-interactive command-approval policy on trusted local hosts
 
 ## 0.1.14
 

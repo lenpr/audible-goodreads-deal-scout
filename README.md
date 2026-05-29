@@ -584,7 +584,7 @@ sh ./scripts/audible-goodreads-deal-scout.sh publish-audit --version 0.1.15 --ta
 Add `--check-audible-fetch` when you want a live daily-deal fetch probe from the current host. This is opt-in because it makes a network request to Audible.
 
 If your OpenClaw install strips executable bits from bundled scripts, run the wrapper through `sh` exactly as shown above and in `SKILL.md`.
-- Scheduled runs cannot stop for interactive exec approval. If your OpenClaw host keeps `exec` in `allowlist` mode, allowlist the launcher your host expects for `sh .../scripts/audible-goodreads-deal-scout.sh` before enabling daily automation, for example `/bin/sh` when that is the shell your host uses.
+- Scheduled runs cannot stop for interactive exec approval. Before enabling daily automation, verify that both OpenClaw exec policy and the Codex app-server policy allow unattended cron commands on your trusted host. If the Codex app-server keeps asking for command approval, set its trusted local policy explicitly, for example `plugins.entries.codex.config.appServer.approvalPolicy: "never"` with `sandbox: "danger-full-access"`, or use an equivalent narrow allowlist for the shell command your host actually runs.
 - Before enabling `dailyAutomation` or `--register-cron`, confirm the configured delivery channel and target are the ones you actually want the skill to use through your local OpenClaw runtime.
 
 ## Advanced CLI usage
