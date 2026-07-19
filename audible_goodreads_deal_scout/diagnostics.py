@@ -175,6 +175,10 @@ def _cron_check(
         "timezone": spec["timezone"],
         "stateFile": state_file or None,
         "expectedMessage": expected_message,
+        "expectedDelivery": {
+            "channel": config.get("deliveryChannel"),
+            "to": config.get("deliveryTarget"),
+        },
     }
     if not check_live_cron:
         return result
@@ -189,6 +193,7 @@ def _cron_check(
         payload = job.get("payload") if isinstance(job.get("payload"), dict) else {}
         message = normalize_space(str(payload.get("message") or payload.get("text") or ""))
         schedule = job.get("schedule") if isinstance(job.get("schedule"), dict) else {}
+        delivery = job.get("delivery") if isinstance(job.get("delivery"), dict) else {}
         name = normalize_space(str(job.get("name") or ""))
         looks_related = (
             config_path_text in message
@@ -198,26 +203,47 @@ def _cron_check(
         )
         if not looks_related:
             continue
+        message_matches = config_path_text in message or expected_message == message
+        schedule_matches = normalize_space(str(schedule.get("cron") or schedule.get("expr") or "")) == cron_expr
+        timezone_matches = normalize_space(str(schedule.get("tz") or "")) == spec["timezone"]
+        expected_channel = normalize_space(str(config.get("deliveryChannel") or ""))
+        expected_target = normalize_space(str(config.get("deliveryTarget") or ""))
+        delivery_matches = (
+            not expected_channel
+            or not expected_target
+            or (
+                normalize_space(str(delivery.get("channel") or "")) == expected_channel
+                and normalize_space(str(delivery.get("to") or "")) == expected_target
+            )
+        )
         match = {
             "id": job.get("id"),
             "name": job.get("name"),
             "enabled": job.get("enabled"),
             "schedule": schedule,
-            "messageMatchesConfig": config_path_text in message or expected_message == message,
-            "scheduleMatchesConfig": normalize_space(str(schedule.get("cron") or schedule.get("expr") or "")) == cron_expr,
-            "timezoneMatchesMarketplace": normalize_space(str(schedule.get("tz") or "")) == spec["timezone"],
+            "messageMatchesConfig": message_matches,
+            "scheduleMatchesConfig": schedule_matches,
+            "timezoneMatchesMarketplace": timezone_matches,
+            "deliveryMatchesConfig": delivery_matches,
+            "matchesConfig": message_matches and schedule_matches and timezone_matches and delivery_matches,
         }
         if job.get("enabled"):
             active_matches.append(match)
         else:
             disabled_matches.append(match)
-    ok = bool(active_matches)
-    status = "matched" if active_matches else ("disabled" if disabled_matches else "not_found")
+    matching_active = [match for match in active_matches if match["matchesConfig"]]
+    ok = bool(matching_active)
+    status = (
+        "matched"
+        if matching_active
+        else ("mismatch" if active_matches else ("disabled" if disabled_matches else "not_found"))
+    )
     return {
         **result,
         "ok": ok,
         "status": status,
         "matches": active_matches,
+        "matching": matching_active,
         "disabledMatches": disabled_matches,
     }
 

@@ -1,6 +1,6 @@
 """Shared prep layer for the Audible Goodreads Deal Scout skill."""
 
-__version__ = "0.1.15"
+__version__ = "0.1.16"
 
 from .core import prepare_run, setup_configuration
 

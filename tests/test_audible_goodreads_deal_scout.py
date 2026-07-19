@@ -214,6 +214,77 @@ class AudibleGoodreadsDealScoutTests(unittest.TestCase):
         self.assertFalse(registration["created"])
         self.assertEqual(registration["existingJob"]["id"], "job-1")
 
+    def test_cron_command_uses_configured_delivery_route(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            config_path = tmp / "config.json"
+            state_path = tmp / "state.json"
+            core.write_json_atomic(
+                config_path,
+                {"deliveryChannel": "telegram", "deliveryTarget": "-1000000000000"},
+            )
+            command = delivery_mod.build_cron_command(
+                openclaw_bin="/fake/openclaw",
+                spec=core.validate_marketplace("us"),
+                config_path=config_path,
+                state_file=state_path,
+            )
+        self.assertIn("--channel", command)
+        self.assertIn("telegram", command)
+        self.assertIn("--to", command)
+        self.assertIn("-1000000000000", command)
+
+    def test_register_cron_reconciles_related_job_drift(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            config_path = tmp / "config.json"
+            state_path = tmp / "state.json"
+            core.write_json_atomic(
+                config_path,
+                {
+                    "audibleMarketplace": "us",
+                    "deliveryChannel": "telegram",
+                    "deliveryTarget": "-1000000000000",
+                },
+            )
+            message = (
+                f"Use $audible-goodreads-deal-scout with config at {config_path} "
+                "in scheduled mode."
+            )
+            related = {
+                "id": "job-drifted",
+                "name": "Daily Audible deal watch (Books)",
+                "enabled": True,
+                "schedule": {"expr": "0 12 * * *", "tz": "Europe/Lisbon"},
+                "delivery": {"mode": "announce", "channel": "telegram", "to": "-5038675285"},
+                "payload": {"message": message},
+            }
+            completed = subprocess.CompletedProcess(
+                args=[],
+                returncode=0,
+                stdout=json.dumps({"job": {"id": "job-drifted", "enabled": True}}),
+                stderr="",
+            )
+            with (
+                mock.patch.object(delivery_mod, "list_cron_jobs", return_value=[related]),
+                mock.patch.object(delivery_mod.subprocess, "run", return_value=completed) as patched,
+            ):
+                result = delivery_mod.register_cron_job(
+                    openclaw_bin="/fake/openclaw",
+                    spec=core.validate_marketplace("us"),
+                    config_path=config_path,
+                    state_file=state_path,
+                    name="Daily Audible deal watch (Books)",
+                    cron_expr="0 12 * * *",
+                )
+        command = patched.call_args.args[0]
+        self.assertTrue(result["updated"])
+        self.assertFalse(result["created"])
+        self.assertEqual(command[3:5], ["edit", "job-drifted"])
+        self.assertIn("America/Los_Angeles", command)
+        self.assertIn("-1000000000000", command)
+
+
     def test_setup_preserves_existing_config_when_registering_cron(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp = Path(tmp_dir)
@@ -1861,6 +1932,49 @@ class WantToReadScanTests(unittest.TestCase):
         self.assertEqual(report["checks"]["cron"]["status"], "disabled")
         self.assertEqual(report["checks"]["cron"]["disabledMatches"][0]["id"], "job-disabled")
         self.assertEqual(report["errors"], ["cron: disabled"])
+
+    def test_doctor_report_flags_active_cron_drift(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            config_path = tmp / "config.json"
+            state_file = tmp / "state.json"
+            config_path.write_text(
+                json.dumps(
+                    {
+                        "audibleMarketplace": "us",
+                        "dailyCron": "0 12 * * *",
+                        "stateFile": str(state_file),
+                        "deliveryChannel": "telegram",
+                        "deliveryTarget": "-1000000000000",
+                    }
+                ),
+                encoding="utf-8",
+            )
+            message = core.build_cron_message(config_path.resolve(), state_file)
+            jobs = [
+                {
+                    "id": "job-drifted",
+                    "name": "Daily Audible deal watch",
+                    "enabled": True,
+                    "schedule": {"expr": "0 12 * * *", "tz": "Europe/Lisbon"},
+                    "delivery": {"channel": "telegram", "to": "-5038675285"},
+                    "payload": {"message": message},
+                }
+            ]
+            with (
+                mock.patch.object(diagnostics, "curl_available", return_value=True),
+                mock.patch.object(diagnostics, "list_cron_jobs", return_value=jobs),
+            ):
+                report = diagnostics.doctor_report(
+                    config_path=config_path,
+                    openclaw_bin=sys.executable,
+                    check_live_cron=True,
+                )
+        match = report["checks"]["cron"]["matches"][0]
+        self.assertFalse(report["ok"])
+        self.assertEqual(report["checks"]["cron"]["status"], "mismatch")
+        self.assertFalse(match["timezoneMatchesMarketplace"])
+        self.assertFalse(match["deliveryMatchesConfig"])
 
     def test_doctor_report_can_check_live_audible_fetch(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

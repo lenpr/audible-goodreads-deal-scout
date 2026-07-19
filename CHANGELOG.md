@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.16
+
+- Route registered OpenClaw cron jobs through the configured delivery channel and target
+- Reconcile existing Audible cron jobs when their schedule, IANA timezone, message, or delivery route drifts
+- Make live cron diagnostics fail on active schedule or delivery mismatches
+
 ## 0.1.15
 
 - Preserve existing config values when rerunning setup or registering cron from an existing config path

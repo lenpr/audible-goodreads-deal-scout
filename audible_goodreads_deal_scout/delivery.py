@@ -68,7 +68,7 @@ def build_cron_command(
 ) -> list[str]:
     validate_timezone(spec)
     resolved_openclaw_bin = resolve_openclaw_bin(openclaw_bin)
-    return [
+    command = [
         resolved_openclaw_bin,
         "--no-color",
         "cron",
@@ -83,9 +83,10 @@ def build_cron_command(
         "isolated",
         "--message",
         build_cron_message(config_path, state_file),
-        "--announce",
-        "--json",
     ]
+    command.extend(_cron_delivery_args(config_path))
+    command.extend(["--announce", "--json"])
+    return command
 
 
 def list_cron_jobs(openclaw_bin: str) -> list[dict[str, Any]]:
@@ -118,20 +119,99 @@ def find_matching_cron_job(
     cron_expr: str,
     timezone_name: str,
     message: str,
+    delivery_channel: str | None = None,
+    delivery_target: str | None = None,
 ) -> dict[str, Any] | None:
     for job in jobs:
         job_name = normalize_space(str(job.get("name") or ""))
         schedule = job.get("schedule") if isinstance(job.get("schedule"), dict) else {}
         payload = job.get("payload") if isinstance(job.get("payload"), dict) else {}
+        delivery = job.get("delivery") if isinstance(job.get("delivery"), dict) else {}
         job_cron = normalize_space(str(schedule.get("cron") or schedule.get("expr") or ""))
+        delivery_matches = (
+            not delivery_channel
+            or not delivery_target
+            or (
+                normalize_space(str(delivery.get("channel") or "")) == delivery_channel
+                and normalize_space(str(delivery.get("to") or "")) == delivery_target
+            )
+        )
         if (
             job_name == name
             and job_cron == cron_expr
             and normalize_space(str(schedule.get("tz") or "")) == timezone_name
             and normalize_space(str(payload.get("message") or payload.get("text") or "")) == message
+            and delivery_matches
         ):
             return job
     return None
+
+
+def find_related_cron_job(
+    jobs: list[dict[str, Any]],
+    *,
+    name: str,
+    message: str,
+    config_path: Path,
+) -> dict[str, Any] | None:
+    config_marker = normalize_space(str(config_path))
+    for job in jobs:
+        job_name = normalize_space(str(job.get("name") or ""))
+        payload = job.get("payload") if isinstance(job.get("payload"), dict) else {}
+        job_message = normalize_space(str(payload.get("message") or payload.get("text") or ""))
+        if job_name == name or (
+            config_marker
+            and config_marker in job_message
+            and "audible-goodreads-deal-scout" in job_message
+        ) or job_message == normalize_space(message):
+            return job
+    return None
+
+
+def _cron_delivery_args(config_path: Path) -> list[str]:
+    _, config = load_config(config_path)
+    channel = normalize_space(str(config.get("deliveryChannel") or ""))
+    target = normalize_space(str(config.get("deliveryTarget") or ""))
+    if not channel or not target:
+        return []
+    return ["--channel", channel, "--to", target]
+
+
+def build_cron_edit_command(
+    *,
+    openclaw_bin: str,
+    job_id: str,
+    spec: dict[str, str],
+    config_path: Path,
+    state_file: Path,
+    name: str,
+    cron_expr: str,
+    enable: bool = False,
+) -> list[str]:
+    validate_timezone(spec)
+    resolved_openclaw_bin = resolve_openclaw_bin(openclaw_bin)
+    command = [
+        resolved_openclaw_bin,
+        "--no-color",
+        "cron",
+        "edit",
+        job_id,
+        "--name",
+        name,
+        "--cron",
+        cron_expr,
+        "--tz",
+        spec["timezone"],
+        "--session",
+        "isolated",
+        "--message",
+        build_cron_message(config_path, state_file),
+    ]
+    command.extend(_cron_delivery_args(config_path))
+    command.append("--announce")
+    if enable:
+        command.append("--enable")
+    return command
 
 
 def register_cron_job(
@@ -146,6 +226,9 @@ def register_cron_job(
     job_name = name or f"Audible Goodreads Deal ({spec['key'].upper()})"
     schedule = cron_expr or spec["defaultCron"]
     message = build_cron_message(config_path, state_file)
+    _, config = load_config(config_path)
+    delivery_channel = normalize_space(str(config.get("deliveryChannel") or ""))
+    delivery_target = normalize_space(str(config.get("deliveryTarget") or ""))
     jobs = list_cron_jobs(openclaw_bin)
     existing = find_matching_cron_job(
         jobs,
@@ -153,6 +236,8 @@ def register_cron_job(
         cron_expr=schedule,
         timezone_name=spec["timezone"],
         message=message,
+        delivery_channel=delivery_channel,
+        delivery_target=delivery_target,
     )
     command = build_cron_command(
         openclaw_bin=openclaw_bin,
@@ -162,13 +247,43 @@ def register_cron_job(
         name=job_name,
         cron_expr=schedule,
     )
-    if existing:
-        return {"ok": True, "created": False, "existingJob": existing, "command": command}
+    if existing and existing.get("enabled") is not False:
+        return {"ok": True, "created": False, "updated": False, "existingJob": existing, "command": command}
+    related = existing or find_related_cron_job(
+        jobs,
+        name=job_name,
+        message=message,
+        config_path=config_path,
+    )
+    if related and related.get("id"):
+        edit_command = build_cron_edit_command(
+            openclaw_bin=openclaw_bin,
+            job_id=str(related["id"]),
+            spec=spec,
+            config_path=config_path,
+            state_file=state_file,
+            name=job_name,
+            cron_expr=schedule,
+            enable=True,
+        )
+        proc = subprocess.run(edit_command, capture_output=True, text=True, timeout=30)
+        if proc.returncode != 0:
+            raise RuntimeError(proc.stderr.strip() or proc.stdout.strip() or "openclaw cron edit failed")
+        updated_jobs = list_cron_jobs(openclaw_bin)
+        updated_job = next((job for job in updated_jobs if job.get("id") == related.get("id")), None)
+        return {
+            "ok": True,
+            "created": False,
+            "updated": True,
+            "previousJob": related,
+            "job": updated_job,
+            "command": edit_command,
+        }
     proc = subprocess.run(command, capture_output=True, text=True, timeout=30)
     if proc.returncode != 0:
         raise RuntimeError(proc.stderr.strip() or proc.stdout.strip() or "openclaw cron add failed")
     payload = json.loads(proc.stdout.strip() or "{}")
-    return {"ok": True, "created": True, "job": payload.get("job"), "command": command}
+    return {"ok": True, "created": True, "updated": False, "job": payload.get("job"), "command": command}
 
 
 def _next_step(label: str, description: str, argv: list[str], *, optional: bool = False) -> dict[str, Any]:
