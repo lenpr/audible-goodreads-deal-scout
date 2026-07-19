@@ -1,0 +1,31 @@
+<!doctype html>
+<html>
+  <head>
+    <script data-source="primary" TYPE='application/ld+json'>
+      {
+        "@context": "https://schema.org",
+        "@graph": [
+          {"@type": "BreadcrumbList", "name": "Navigation"},
+          {
+            "@type": ["Thing", "https://schema.org/Product"],
+            "offers": {"price": "18.95", "priceCurrency": "USD"}
+          }
+        ]
+      }
+    </script>
+    <meta content="https://example.com/variant-cover.jpg" property="og:image">
+  </head>
+  <body>
+    <h1 class="bc-heading"><span>Signal Fire: A Variant</span></h1>
+    <p>Get today's Daily Deal before time runs out! $5.99 Deal ends @ 11:59PM PT.</p>
+    <adbl-product-metadata data-layout="compact">
+      <script data-version="1" TYPE='application/json'>
+        {"authors":[{"name":"Jane Story"}],"duration":"9 hrs and 10 mins","releaseDate":"2024-01-10","categories":[{"name":"Science Fiction"}]}
+      </script>
+    </adbl-product-metadata>
+    <adbl-text-block data-kind="description" slot='summary'>
+      <p>A resilient parser should preserve this <strong>nested summary</strong>.</p>
+    </adbl-text-block>
+    <adbl-chip><span>Political Thriller</span></adbl-chip>
+  </body>
+</html>

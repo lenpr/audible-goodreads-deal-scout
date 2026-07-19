@@ -277,12 +277,15 @@ The model writes the fit paragraph. Python does not call a provider API directly
 
 Use:
 - Goodreads public score
+- `artifacts.fitEvidencePath` as the primary candidate-specific taste evidence when present
 - `artifacts.fitContextPath`
 - `artifacts.reviewSourcePath` when present
 - `artifacts.notesPath` when present
 
 Rules:
 - Do not drop rated/reviewed CSV rows for prompt convenience.
+- Start with the bounded fit-evidence artifact and consult the complete fit context only when the selected evidence is insufficient or contradictory.
+- Do not infer why the user liked or disliked a title from a rating alone; use written reviews or notes for preference claims.
 - Summarize each written Goodreads review to 500 characters or fewer before using it as evidence.
 - If `personalData.privacyMode == "minimal"`, do not use personal CSV or notes content in the fit paragraph.
 - If no meaningful personal data exists, say so explicitly instead of inventing taste evidence.

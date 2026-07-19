@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- Build a bounded candidate-specific fit-evidence artifact and require more concrete, review-grounded recommendation prose
+- Strictly validate runtime output fields, types, Goodreads URLs, rating ranges, fit status semantics, and fit paragraph length
+- Split preparation into focused fetch, library, short-circuit, and artifact phases and remove implicit `core` re-exports
+- Harden Audible and Goodreads parsers for JSON-LD graphs, markup attribute variants, nested text, lowercase product ids, and trailing price punctuation
+- Surface OpenClaw command timeouts and invalid JSON instead of treating ambiguous subprocess output as success or an empty cron list
+- Split the test suite by behavior and add DST, expiry, cache, atomic-write, subprocess, parser-variant, and evidence-selection coverage
+- Exclude `PROMPT_REQUEST.md` from the published ClawHub runtime bundle
+
 ## 0.1.16
 
 - Route registered OpenClaw cron jobs through the configured delivery channel and target

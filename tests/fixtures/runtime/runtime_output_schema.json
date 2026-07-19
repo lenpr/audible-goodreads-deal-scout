@@ -1,8 +1,43 @@
 {
+  "additionalProperties": false,
   "properties": {
     "fit": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "else": {
+            "properties": {
+              "sentence": {
+                "type": "null"
+              }
+            }
+          },
+          "if": {
+            "properties": {
+              "status": {
+                "const": "written"
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          "then": {
+            "properties": {
+              "sentence": {
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "sentence"
+            ]
+          }
+        }
+      ],
       "properties": {
         "sentence": {
+          "description": "When status is written, a 45-90 word Fit paragraph.",
           "type": [
             "string",
             "null"
@@ -22,14 +57,73 @@
       "type": "object"
     },
     "goodreads": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "else": {
+            "properties": {
+              "author": {
+                "type": "null"
+              },
+              "averageRating": {
+                "type": "null"
+              },
+              "ratingsCount": {
+                "type": "null"
+              },
+              "title": {
+                "type": "null"
+              },
+              "url": {
+                "type": "null"
+              }
+            }
+          },
+          "if": {
+            "properties": {
+              "status": {
+                "const": "resolved"
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          "then": {
+            "properties": {
+              "author": {
+                "type": "string"
+              },
+              "averageRating": {
+                "type": "number"
+              },
+              "title": {
+                "type": "string"
+              },
+              "url": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "url",
+              "title",
+              "author",
+              "averageRating"
+            ]
+          }
+        }
+      ],
       "properties": {
         "author": {
+          "minLength": 1,
           "type": [
             "string",
             "null"
           ]
         },
         "averageRating": {
+          "maximum": 5,
+          "minimum": 0,
           "type": [
             "number",
             "null"
@@ -42,6 +136,7 @@
           ]
         },
         "ratingsCount": {
+          "minimum": 0,
           "type": [
             "integer",
             "null"
@@ -55,12 +150,14 @@
           ]
         },
         "title": {
+          "minLength": 1,
           "type": [
             "string",
             "null"
           ]
         },
         "url": {
+          "pattern": "^https://(?:www\\.)?goodreads\\.com/book/show/",
           "type": [
             "string",
             "null"

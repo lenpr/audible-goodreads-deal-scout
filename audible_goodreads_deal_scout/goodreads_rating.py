@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import hashlib
-import html
 import json
 import re
 import urllib.parse
@@ -11,6 +10,7 @@ from pathlib import Path
 from typing import Any, Callable
 from urllib.error import HTTPError, URLError
 
+from .html_extract import iter_json_objects, parse_json_scripts
 from .shared import normalize_space, parse_float, parse_int_value, write_json_atomic
 
 
@@ -40,21 +40,17 @@ def fetch_goodreads_text_with_final_url(url: str) -> tuple[str, str]:
             raw = response.read()
             return raw.decode("utf-8", "ignore"), str(response.geturl() or url)
     except (HTTPError, URLError) as exc:
-        raise GoodreadsRatingError(f"Goodreads rating lookup failed for {url}: {exc}") from exc
+        error_text = str(exc)
+        if isinstance(exc, HTTPError):
+            exc.close()
+        raise GoodreadsRatingError(f"Goodreads rating lookup failed for {url}: {error_text}") from exc
 
 
 def parse_goodreads_rating(html_text: str) -> dict[str, Any]:
     rating: float | None = None
     ratings_count: int | None = None
-    for match in re.finditer(r'<script[^>]+type=["\']application/ld\+json["\'][^>]*>(.*?)</script>', html_text, re.I | re.S):
-        try:
-            payload = json.loads(html.unescape((match.group(1) or "").strip()))
-        except Exception:
-            continue
-        candidates = payload if isinstance(payload, list) else [payload]
-        for item in candidates:
-            if not isinstance(item, dict):
-                continue
+    for payload in parse_json_scripts(html_text, "application/ld+json"):
+        for item in iter_json_objects(payload):
             aggregate = item.get("aggregateRating") if isinstance(item.get("aggregateRating"), dict) else {}
             rating = rating if rating is not None else parse_float(aggregate.get("ratingValue"))
             ratings_count = ratings_count if ratings_count is not None else parse_int_value(aggregate.get("ratingCount") or aggregate.get("reviewCount"))

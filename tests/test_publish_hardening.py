@@ -8,7 +8,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from audible_goodreads_deal_scout import core, rendering  # noqa: E402
+from audible_goodreads_deal_scout import audible_source, constants, core, rendering, runtime_contract, settings  # noqa: E402
 
 
 FIXTURE_ROOT = Path(__file__).resolve().parent / "fixtures"
@@ -56,13 +56,13 @@ class PublishHardeningTests(unittest.TestCase):
 
     def test_certified_marketplaces_manifest_matches_supported_marketplaces(self) -> None:
         manifest = read_fixture_json("marketplaces", "certified_marketplaces.json")
-        self.assertEqual(sorted(manifest), sorted(core.SUPPORTED_MARKETPLACES))
+        self.assertEqual(sorted(manifest), sorted(settings.SUPPORTED_MARKETPLACES))
 
     def test_certified_marketplace_fixtures_parse_expected_fields(self) -> None:
         manifest = read_fixture_json("marketplaces", "certified_marketplaces.json")
         for marketplace, expected in manifest.items():
             with self.subTest(marketplace=marketplace):
-                candidate = core.parse_audible_deal(
+                candidate = audible_source.parse_audible_deal(
                     read_fixture_text("marketplaces", f"{marketplace}_dailydeal.html"),
                     str(expected["finalUrl"]),
                     str(expected["dealUrl"]),
@@ -79,7 +79,7 @@ class PublishHardeningTests(unittest.TestCase):
         manifest = read_fixture_json("marketplaces", "certified_marketplaces.json")
         for marketplace, expected in manifest.items():
             with self.subTest(marketplace=marketplace):
-                candidate = core.parse_audible_deal(
+                candidate = audible_source.parse_audible_deal(
                     read_fixture_text("marketplaces", f"{marketplace}_dailydeal.html"),
                     str(expected["finalUrl"]),
                     str(expected["dealUrl"]),
@@ -87,7 +87,7 @@ class PublishHardeningTests(unittest.TestCase):
                 self.assertEqual(rendering.price_display(candidate, marketplace), expected["priceDisplay"])
 
     def test_runtime_output_schema_matches_fixture(self) -> None:
-        self.assertEqual(core.runtime_output_schema(), read_fixture_json("runtime", "runtime_output_schema.json"))
+        self.assertEqual(runtime_contract.runtime_output_schema(), read_fixture_json("runtime", "runtime_output_schema.json"))
 
     def test_validate_runtime_output_rejects_semantically_invalid_payloads(self) -> None:
         invalid_payloads = [
@@ -151,17 +151,73 @@ class PublishHardeningTests(unittest.TestCase):
         for payload, expected_message in invalid_payloads:
             with self.subTest(payload=payload):
                 with self.assertRaisesRegex(ValueError, expected_message):
-                    core.validate_runtime_output(payload)
+                    runtime_contract.validate_runtime_output(payload)
 
-    def test_validate_runtime_output_normalizes_non_written_fit_sentence_to_none(self) -> None:
-        payload = core.validate_runtime_output(
-            {
-                "schemaVersion": 1,
-                "goodreads": {"status": "lookup_failed"},
-                "fit": {"status": "unavailable", "sentence": "ignored"},
-            }
+    def test_validate_runtime_output_rejects_non_written_fit_sentence(self) -> None:
+        with self.assertRaisesRegex(ValueError, "requires fit.sentence to be null or omitted"):
+            runtime_contract.validate_runtime_output(
+                {
+                    "schemaVersion": 1,
+                    "goodreads": {"status": "lookup_failed"},
+                    "fit": {"status": "unavailable", "sentence": "ignored"},
+                }
+            )
+
+    def test_validate_runtime_output_rejects_unknown_fields_and_type_coercion(self) -> None:
+        with self.assertRaisesRegex(ValueError, "unknown field"):
+            runtime_contract.validate_runtime_output(
+                {
+                    "schemaVersion": 1,
+                    "goodreads": {"status": "lookup_failed", "confidence": 0.8},
+                    "fit": {"status": "unavailable"},
+                }
+            )
+        with self.assertRaisesRegex(ValueError, "must be a number or null"):
+            runtime_contract.validate_runtime_output(
+                {
+                    "schemaVersion": 1,
+                    "goodreads": {
+                        "status": "resolved",
+                        "url": "https://www.goodreads.com/book/show/1",
+                        "title": "Signal Fire",
+                        "author": "Jane Story",
+                        "averageRating": "4.2",
+                    },
+                    "fit": {"status": "not_applicable"},
+                }
+            )
+
+    def test_validate_runtime_output_enforces_fit_word_range_and_goodreads_origin(self) -> None:
+        base = {
+            "schemaVersion": 1,
+            "goodreads": {
+                "status": "resolved",
+                "url": "https://www.goodreads.com/book/show/1",
+                "title": "Signal Fire",
+                "author": "Jane Story",
+                "averageRating": 4.2,
+            },
+        }
+        with self.assertRaisesRegex(ValueError, "45-90 words"):
+            runtime_contract.validate_runtime_output(
+                {**base, "fit": {"status": "written", "sentence": "Too generic and much too short."}}
+            )
+        with self.assertRaisesRegex(ValueError, "45-90 words"):
+            runtime_contract.validate_runtime_output(
+                {**base, "fit": {"status": "written", "sentence": "Fit: " + "specific " * 90}}
+            )
+        accepted = runtime_contract.validate_runtime_output(
+            {**base, "fit": {"status": "written", "sentence": "Fit: " + "specific " * 44}}
         )
-        self.assertIsNone(payload["fit"]["sentence"])
+        self.assertEqual(len(accepted["fit"]["sentence"].split()), 45)
+        with self.assertRaisesRegex(ValueError, "HTTPS Goodreads URL"):
+            runtime_contract.validate_runtime_output(
+                {
+                    **base,
+                    "goodreads": {**base["goodreads"], "url": "https://example.com/book/show/1"},
+                    "fit": {"status": "not_applicable"},
+                }
+            )
 
     def test_runtime_prompt_includes_review_summary_and_privacy_rules(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -239,7 +295,7 @@ class PublishHardeningTests(unittest.TestCase):
                 "fit": {"status": "not_applicable"},
             },
         )
-        self.assertIn(core.FIT_NO_PERSONAL_DATA, final["message"])
+        self.assertIn(constants.FIT_NO_PERSONAL_DATA, final["message"])
         self.assertIn("Audible UK Daily Promotion — 2026-04-20", final["message"])
         self.assertIn("Price: £2.99 (-77%, list price £12.99)", final["message"])
 
@@ -248,7 +304,7 @@ class PublishHardeningTests(unittest.TestCase):
             {
                 "status": "recommend",
                 "reasonCode": "recommend_public_threshold",
-                "fitSentence": core.FIT_NO_PERSONAL_DATA,
+                "fitSentence": constants.FIT_NO_PERSONAL_DATA,
                 "warnings": ["Your Goodreads export is 190 days old."],
                 "audible": {
                     "title": "Storm Atlas",

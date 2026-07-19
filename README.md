@@ -378,7 +378,8 @@ This part should be explicit.
 - The Python prep layer reads your Goodreads CSV locally.
 - The Python prep layer also reads your notes file locally.
 - The skill will read whatever file paths you configure, so keep those paths limited to the files you intend it to use.
-- The model step may use fit-context data unless you set `privacyMode` to `minimal`.
+- The model step starts with a bounded, candidate-specific fit-evidence file selected from your ratings and reviews. The complete fit context remains available only as fallback evidence.
+- Rating-only entries establish that you liked or disliked a title, but the runtime prompt uses reviews or preference notes before claiming why.
 - In `privacyMode: "minimal"`, the skill still uses local shelf logic, but it does **not** pass your personal CSV or notes content into the model fit step.
 - Delivery targets are whatever you configure in your own OpenClaw runtime.
 
@@ -628,6 +629,8 @@ sh ./scripts/audible-goodreads-deal-scout.sh run-and-deliver \
 - `TRUST.md`: security, data-access, and no-purchase behavior summary
 - `agents/openai.yaml`: interface metadata and default prompt for OpenClaw agent surfaces
 - `scripts/audible-goodreads-deal-scout.sh`: bundled shell wrapper for local CLI and OpenClaw installs that may not preserve executable bits
+- `audible_goodreads_deal_scout/fit_evidence.py`: deterministic candidate-specific Goodreads evidence selection
+- `audible_goodreads_deal_scout/html_extract.py`: shared structured-data and metadata extraction for external pages
 - `audible_goodreads_deal_scout/core.py`: prep/orchestration logic
 - `audible_goodreads_deal_scout/audible_fetch.py`: guarded Audible HTTP fetching, browser-like headers, and curl fallback
 - `audible_goodreads_deal_scout/audible_auth.py`: optional headless Audible auth and API price lookup helpers

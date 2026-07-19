@@ -141,7 +141,7 @@ def parse_localized_price(raw: str | None) -> float | None:
         number = plain.group(1)
     else:
         number = match.group("prefix_amount") or match.group("suffix_amount") or ""
-    number = number.replace(" ", "")
+    number = number.replace(" ", "").rstrip(".,")
     if "," in number and "." in number:
         if number.rfind(",") > number.rfind("."):
             number = number.replace(".", "").replace(",", ".")

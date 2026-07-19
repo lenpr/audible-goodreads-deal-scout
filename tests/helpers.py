@@ -33,6 +33,14 @@ GOODREADS_HEADERS = [
 ]
 
 
+PERSONALIZED_FIT = (
+    "Fit: Signal Fire's sharp, idea-driven tension matches the cerebral speculative fiction you praised in "
+    "Glass Harbor, especially where political stakes shape intimate choices. It is already on your Goodreads "
+    "to-read shelf, which strengthens the case. The main risk is its cooler emotional register, since your review "
+    "of Winter House favored warmer character work over conceptual distance."
+)
+
+
 AUDIBLE_HTML = """
 <html>
   <head>

@@ -21,6 +21,20 @@ from .settings import (
 from .shared import atomic_write_text, ensure_python_version, normalize_space, write_json_atomic
 
 
+def _run_openclaw(command: list[str], *, timeout: int, action: str) -> subprocess.CompletedProcess[str]:
+    try:
+        return subprocess.run(command, capture_output=True, text=True, timeout=timeout)
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(f"{action} timed out after {timeout} seconds.") from exc
+
+
+def _json_output(stdout: str, *, action: str) -> Any:
+    try:
+        return json.loads(stdout.strip() or "{}")
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"{action} returned invalid JSON.") from exc
+
+
 def resolve_openclaw_bin(openclaw_bin: str = "openclaw") -> str:
     env_bin = normalize_space(os.environ.get("OPENCLAW_BIN"))
     requested = normalize_space(openclaw_bin) or "openclaw"
@@ -91,18 +105,14 @@ def build_cron_command(
 
 def list_cron_jobs(openclaw_bin: str) -> list[dict[str, Any]]:
     resolved_openclaw_bin = resolve_openclaw_bin(openclaw_bin)
-    proc = subprocess.run(
+    proc = _run_openclaw(
         [resolved_openclaw_bin, "--no-color", "cron", "list", "--json"],
-        capture_output=True,
-        text=True,
         timeout=30,
+        action="openclaw cron list",
     )
     if proc.returncode != 0:
         raise RuntimeError(proc.stderr.strip() or proc.stdout.strip() or "openclaw cron list failed")
-    try:
-        payload = json.loads(proc.stdout.strip() or "{}")
-    except Exception:
-        return []
+    payload = _json_output(proc.stdout, action="openclaw cron list")
     if isinstance(payload, list):
         return [item for item in payload if isinstance(item, dict)]
     if isinstance(payload, dict):
@@ -266,7 +276,7 @@ def register_cron_job(
             cron_expr=schedule,
             enable=True,
         )
-        proc = subprocess.run(edit_command, capture_output=True, text=True, timeout=30)
+        proc = _run_openclaw(edit_command, timeout=30, action="openclaw cron edit")
         if proc.returncode != 0:
             raise RuntimeError(proc.stderr.strip() or proc.stdout.strip() or "openclaw cron edit failed")
         updated_jobs = list_cron_jobs(openclaw_bin)
@@ -279,10 +289,10 @@ def register_cron_job(
             "job": updated_job,
             "command": edit_command,
         }
-    proc = subprocess.run(command, capture_output=True, text=True, timeout=30)
+    proc = _run_openclaw(command, timeout=30, action="openclaw cron add")
     if proc.returncode != 0:
         raise RuntimeError(proc.stderr.strip() or proc.stdout.strip() or "openclaw cron add failed")
-    payload = json.loads(proc.stdout.strip() or "{}")
+    payload = _json_output(proc.stdout, action="openclaw cron add")
     return {"ok": True, "created": True, "updated": False, "job": payload.get("job"), "command": command}
 
 
@@ -536,12 +546,12 @@ def deliver_message(
     ]
     if dry_run:
         command.insert(-1, "--dry-run")
-    proc = subprocess.run(command, capture_output=True, text=True, timeout=60)
+    proc = _run_openclaw(command, timeout=60, action="openclaw message send")
     stdout = (proc.stdout or "").strip()
     stderr = (proc.stderr or "").strip()
     if proc.returncode != 0:
         raise RuntimeError(stderr or stdout or "openclaw message send failed")
-    payload = json.loads(stdout or "{}")
+    payload = _json_output(stdout, action="openclaw message send")
     return {
         "ok": True,
         "configPath": str(path),

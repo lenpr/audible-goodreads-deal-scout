@@ -33,6 +33,7 @@ Use this before publishing a new version to ClawHub.
 
 - Confirm `publish-audit` reports no private identifiers
 - Confirm `.clawhubignore` excludes tests, docs, and local/generated state
+- Confirm `.clawhubignore` excludes `PROMPT_REQUEST.md`; it is a repository implementation reference, not runtime skill material
 - Confirm `TRUST.md` is current and included in the published bundle
 - Confirm `SKILL.md` and `TRUST.md` clearly state that the skill reports opportunities only and does not buy, reserve, check out, redeem credits, manage subscriptions, or complete purchases
 - Confirm placeholder paths and example content stay generic and public-safe

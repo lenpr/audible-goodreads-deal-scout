@@ -210,30 +210,34 @@ def _fetch_python_once(url: str) -> AudibleFetchResult:
             )
     except HTTPError as exc:
         reason_code = _fetch_reason_code("python", exc.code, exc)
-        if exc.code in {403, 429}:
+        http_status = exc.code
+        final_url = str(exc.geturl() or url)
+        error_text = str(exc)
+        exc.close()
+        if http_status in {403, 429}:
             _raise_blocked(
-                f"Audible request blocked with HTTP {exc.code}.",
+                f"Audible request blocked with HTTP {http_status}.",
                 backend="python",
                 url=url,
-                final_url=str(exc.geturl() or url),
-                http_status=exc.code,
+                final_url=final_url,
+                http_status=http_status,
                 reason_code=reason_code,
             )
         raise AudibleFetchError(
-            f"Audible request failed for {url}: {exc}",
+            f"Audible request failed for {url}: {error_text}",
             backend="python",
-            http_status=exc.code,
-            final_url=str(exc.geturl() or url),
+            http_status=http_status,
+            final_url=final_url,
             reason_code=reason_code,
             attempts=[
                 _attempt_payload(
                     backend="python",
                     ok=False,
                     url=url,
-                    final_url=str(exc.geturl() or url),
-                    http_status=exc.code,
+                    final_url=final_url,
+                    http_status=http_status,
                     reason_code=reason_code,
-                    error=str(exc),
+                    error=error_text,
                 )
             ],
         ) from exc

@@ -9,9 +9,23 @@ from . import __version__
 from . import core
 from .audible_auth import auth_file_status, finish_external_auth, start_external_auth, test_authenticated_price
 from .cli_errors import cli_error_payload
+from .constants import DEFAULT_DELIVERY_POLICY, DEFAULT_THRESHOLD
+from .delivery import (
+    deliver_message,
+    resolve_delivery_policy,
+    setup_configuration,
+)
 from .diagnostics import doctor_report
 from .repo_audit import scan_repo_for_leaks
-from .shared import write_json_atomic
+from .rendering import build_delivery_plan
+from .settings import (
+    SUPPORTED_MARKETPLACES,
+    default_storage_dir,
+    parse_csv_column_overrides,
+    resolve_notes_text,
+    validate_marketplace,
+)
+from .shared import prompt, write_json_atomic
 from .want_to_read_scan import report_json, scan_want_to_read
 
 REQUIRED_PUBLISH_IGNORE_PATTERNS = (
@@ -24,6 +38,7 @@ REQUIRED_PUBLISH_IGNORE_PATTERNS = (
     ".pytest_cache/",
     "tests/",
     "docs/",
+    "PROMPT_REQUEST.md",
 )
 
 
@@ -222,44 +237,44 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def interactive_setup_defaults(args: argparse.Namespace) -> dict[str, object]:
-    marketplace = args.audible_marketplace or core.prompt(
+    marketplace = args.audible_marketplace or prompt(
         "Which Audible store do you want to use?", "us"
     )
-    personalized = core.prompt("Do you want personalized recommendations? (yes/no)", "yes").casefold() in {"y", "yes"}
+    personalized = prompt("Do you want personalized recommendations? (yes/no)", "yes").casefold() in {"y", "yes"}
     csv_path = args.goodreads_csv
     notes_text = args.notes_text
     notes_file = args.notes_file
     if personalized:
         if not csv_path:
-            csv_path = core.prompt("Optional Goodreads CSV path (leave blank to skip)", "")
+            csv_path = prompt("Optional Goodreads CSV path (leave blank to skip)", "")
         if not notes_file and not notes_text:
-            notes_choice = core.prompt("Optional notes file path or leave blank to paste notes next", "")
+            notes_choice = prompt("Optional notes file path or leave blank to paste notes next", "")
             if notes_choice:
                 notes_file = notes_choice
             else:
-                pasted = core.prompt("Optional freeform reading notes (leave blank to skip)", "")
+                pasted = prompt("Optional freeform reading notes (leave blank to skip)", "")
                 notes_text = pasted
     threshold = args.threshold if args.threshold is not None else float(
-        core.prompt("Goodreads score threshold", str(core.DEFAULT_THRESHOLD))
+        prompt("Goodreads score threshold", str(DEFAULT_THRESHOLD))
     )
     daily_automation = args.daily_automation or (
-        core.prompt("Do you want daily automation? (yes/no)", "no").casefold() in {"y", "yes"}
+        prompt("Do you want daily automation? (yes/no)", "no").casefold() in {"y", "yes"}
     )
-    storage_dir = args.storage_dir or core.prompt(
+    storage_dir = args.storage_dir or prompt(
         "Where should config/state be saved?",
-        str(core.default_storage_dir()),
+        str(default_storage_dir()),
     )
     daily_cron = args.daily_cron
     if daily_automation and not daily_cron:
         try:
-            spec = core.validate_marketplace(marketplace)
-            daily_cron = core.prompt("Daily cron expression", spec["defaultCron"])
+            spec = validate_marketplace(marketplace)
+            daily_cron = prompt("Daily cron expression", spec["defaultCron"])
         except ValueError:
             daily_cron = None
-    delivery_target = args.delivery_target or core.prompt("Optional Telegram/transport delivery target", "")
-    delivery_policy = args.delivery_policy or core.prompt(
+    delivery_target = args.delivery_target or prompt("Optional Telegram/transport delivery target", "")
+    delivery_policy = args.delivery_policy or prompt(
         "Delivery policy (positive_only / always_full / summary_on_non_match)",
-        core.DEFAULT_DELIVERY_POLICY,
+        DEFAULT_DELIVERY_POLICY,
     )
     return {
         "audibleMarketplace": marketplace,
@@ -275,7 +290,7 @@ def interactive_setup_defaults(args: argparse.Namespace) -> dict[str, object]:
         "privacyMode": args.privacy_mode or "normal",
         "artifactDir": args.artifact_dir,
         "freshnessDays": args.freshness_days,
-        "csvColumns": core.parse_csv_column_overrides(args.csv_column),
+        "csvColumns": parse_csv_column_overrides(args.csv_column),
         "stateFile": args.state_file,
         "configPath": args.config_path,
         "preferencesPath": args.preferences_path,
@@ -304,14 +319,14 @@ def command_setup(args: argparse.Namespace) -> int:
             "freshnessDays": args.freshness_days,
             "dailyCron": args.daily_cron,
             "dailyAutomation": args.daily_automation,
-            "csvColumns": core.parse_csv_column_overrides(args.csv_column),
+            "csvColumns": parse_csv_column_overrides(args.csv_column),
             "deliveryChannel": args.delivery_channel,
             "deliveryTarget": args.delivery_target,
             "deliveryPolicy": args.delivery_policy,
         }
     else:
         payload = interactive_setup_defaults(args)
-    result = core.setup_configuration(payload, openclaw_bin=args.openclaw_bin, register_cron=args.register_cron)
+    result = setup_configuration(payload, openclaw_bin=args.openclaw_bin, register_cron=args.register_cron)
     print(json.dumps(result, indent=2, sort_keys=True, ensure_ascii=False))
     return 0
 
@@ -333,7 +348,7 @@ def command_prepare(args: argparse.Namespace) -> int:
         "audibleFetchBackend": args.audible_fetch_backend,
         "freshnessDays": args.freshness_days,
         "notesWarningChars": args.notes_warning_chars,
-        "csvColumnOverrides": core.parse_csv_column_overrides(args.csv_column),
+        "csvColumnOverrides": parse_csv_column_overrides(args.csv_column),
     }
     print(json.dumps(core.prepare_run(payload), indent=2, sort_keys=True, ensure_ascii=False))
     return 0
@@ -346,10 +361,10 @@ def command_show_csv_headers(args: argparse.Namespace) -> int:
 
 
 def command_measure_context(args: argparse.Namespace) -> int:
-    notes_text = core.resolve_notes_text(args.notes_file, args.notes_text)
+    notes_text = resolve_notes_text(args.notes_file, args.notes_text)
     result = core.measure_context(
         Path(args.goodreads_csv).expanduser(),
-        csv_columns=core.parse_csv_column_overrides(args.csv_column),
+        csv_columns=parse_csv_column_overrides(args.csv_column),
         notes_text=notes_text,
         output_path=Path(args.output).expanduser() if args.output else None,
     )
@@ -530,7 +545,7 @@ def command_publish_audit(args: argparse.Namespace) -> int:
             "missingExclusions": missing_publish_ignore_patterns,
         },
         "privacyAudit": leak_audit,
-        "supportedMarketplaces": sorted(core.SUPPORTED_MARKETPLACES),
+        "supportedMarketplaces": sorted(SUPPORTED_MARKETPLACES),
         "recommendedPublishCommand": (
             'clawhub publish . --slug audible-goodreads-deal-scout '
             f'--name "Audible Goodreads Deal Scout" --version {args.version} --tags {args.tags}'
@@ -558,7 +573,7 @@ def command_deliver(args: argparse.Namespace) -> int:
         message_text = Path(args.message_file).expanduser().read_text(encoding="utf-8")
     else:
         message_text = sys.stdin.read()
-    result = core.deliver_message(
+    result = deliver_message(
         message_text=message_text,
         config_path=Path(args.config_path).expanduser() if args.config_path else None,
         delivery_channel=args.delivery_channel,
@@ -592,11 +607,11 @@ def command_run_and_deliver(args: argparse.Namespace) -> int:
         return 1
     runtime_payload = load_json_input(args.runtime_output) if args.runtime_output else None
     final_result = core.finalize_skill_result(prep_payload, runtime_payload)
-    _, configured_policy = core.resolve_delivery_policy(
+    _, configured_policy = resolve_delivery_policy(
         config_path=Path(args.config_path).expanduser() if args.config_path else None,
         delivery_policy=args.delivery_policy,
     )
-    delivery_plan = core.build_delivery_plan(
+    delivery_plan = build_delivery_plan(
         final_result,
         configured_policy,
     )
@@ -611,7 +626,7 @@ def command_run_and_deliver(args: argparse.Namespace) -> int:
         )
         return 0
     try:
-        delivery_result = core.deliver_message(
+        delivery_result = deliver_message(
             message_text=str(delivery_plan.get("message") or ""),
             config_path=Path(args.config_path).expanduser() if args.config_path else None,
             delivery_channel=args.delivery_channel,

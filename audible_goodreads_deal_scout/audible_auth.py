@@ -124,6 +124,7 @@ def _urlopen_json(request: urllib.request.Request, *, timeout: int = 30) -> dict
             raw = response.read().decode("utf-8", "ignore")
     except urllib.error.HTTPError as exc:
         body = exc.read().decode("utf-8", "ignore")
+        exc.close()
         raise AudibleAuthError(f"Audible API HTTP {exc.code}: {redact_sensitive_text(body or exc.reason)}") from exc
     except urllib.error.URLError as exc:
         raise AudibleAuthError(f"Audible API request failed: {redact_sensitive_text(exc)}") from exc

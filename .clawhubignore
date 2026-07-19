@@ -7,3 +7,4 @@ audible-auth*.json
 .pytest_cache/
 tests/
 docs/
+PROMPT_REQUEST.md
