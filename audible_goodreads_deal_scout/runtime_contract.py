@@ -138,7 +138,7 @@ def normalize_fit_sentence(sentence: str) -> str:
 
 def _validate_goodreads_url(url: str) -> None:
     parsed = urllib.parse.urlparse(url)
-    if parsed.scheme != "https" or (parsed.hostname or "").casefold() not in {"goodreads.com", "www.goodreads.com"}:
+    if parsed.scheme != "https" or parsed.netloc.casefold() not in {"goodreads.com", "www.goodreads.com"}:
         raise ValueError("goodreads.url must be an HTTPS Goodreads URL.")
     if not parsed.path.startswith("/book/show/"):
         raise ValueError("goodreads.url must identify a Goodreads book page.")

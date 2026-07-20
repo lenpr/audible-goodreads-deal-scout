@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+## 0.1.18 - 2026-07-19
+
+- Add a deterministic scheduled gate so positive-only suppressions do not start an agent or create cron run history
+- Use OpenClaw condition triggers, lightweight bootstrap context, and disabled model thinking for substantially smaller scheduled runs
+- Reconcile and diagnose cron trigger, context, schedule, IANA timezone, and delivery-route drift; support explicit automation and route removal
+- Preserve unknown and marketplace-specific config values, resolve configured relative paths from the config directory, and fail closed on malformed config or state
+- Bind scheduled delivery and state updates to the config/state paths recorded by the current prepare artifact
+- Harden Audible auth storage, refresh-token rotation, permissions, schema checks, redirect handling, response bounds, and sensitive-data redaction
+- Validate public HTTP redirects before following them, bound compressed/decompressed responses, and tighten Audible and Goodreads URL paths
+- Prefer strong Audible catalog matches regardless of candidate order and restrict Goodreads aggregate ratings to valid Book entities
+- Validate scan bounds, preflight authenticated scans, preserve zero-valued options, and return partial-failure exit codes reliably
+- Make delivery success and dry-run results unambiguous and reject successful exit codes carrying failure payloads
+- Audit the actual ClawHub publish bundle, require every runtime module, and enforce package/changelog/release-version parity
+- Add regression and permutation coverage for security, setup, scheduling, state, parsing, delivery, publishing, and scan failure boundaries
+
+## 0.1.17
+
+- Publish the post-0.1.16 test release pointer used to verify ClawHub release metadata
 - Build a bounded candidate-specific fit-evidence artifact and require more concrete, review-grounded recommendation prose
 - Strictly validate runtime output fields, types, Goodreads URLs, rating ranges, fit status semantics, and fit paragraph length
 - Split preparation into focused fetch, library, short-circuit, and artifact phases and remove implicit `core` re-exports

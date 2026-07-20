@@ -6,11 +6,13 @@ Use this before publishing a new version to ClawHub.
 
 - Run `python3 -m py_compile audible_goodreads_deal_scout/*.py tests/*.py`
 - Run `python3 -m unittest discover -s tests -p 'test_*.py'`
+- Run `uvx ruff check .`
 - Run `sh ./scripts/audible-goodreads-deal-scout.sh publish-audit --version <version> --tags latest`
 - Optional: run `doctor --check-audible-fetch` on the target OpenClaw host before re-enabling scheduled delivery after Audible fetch changes
 - Run a short offline or cached Want-to-Read scan with `--progress json`, `--output-json`, and `--output-md` to verify progress and report output stay separate
 - Keep the documented `sh ./scripts/...` form unless you have verified your target install preserves executable bits on bundled scripts
 - Optional: run the local OpenClaw skill packager/validator against `.` if you use that publish workflow on this machine
+- Generate `scheduled-trigger.js` through setup and run `node --check` against a temporary `.mjs` copy
 
 ## Runtime confidence
 
@@ -23,6 +25,8 @@ Use this before publishing a new version to ClawHub.
   - what is likely to appeal
   - one credible downside
   - the `to-read` shelf when applicable
+- On a trusted target host, verify `cron.triggers.enabled` is intentional and `doctor --check-cron` confirms the trigger, lightweight context, disabled thinking, IANA timezone, and delivery route
+- Verify a deterministic `positive_only` suppression returns `fire: false` from `scheduled-gate` without starting an agent run
 
 ## Marketplace confidence
 
@@ -43,7 +47,7 @@ Use this before publishing a new version to ClawHub.
 
 ## Versioning
 
-- Bump version in your release command
+- Bump the package version and use that exact version in the changelog and release command; `publish-audit` must reject any mismatch
 - Add the release note to `CHANGELOG.md`
 - Create a matching Git tag for the released commit, for example `git tag v0.1.12`
 - Push the commit and matching tag to GitHub before or immediately after publishing, for example `git push origin main --tags`

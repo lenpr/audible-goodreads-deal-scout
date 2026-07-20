@@ -35,10 +35,12 @@ class FailureBoundaryTests(unittest.TestCase):
             auth_path = Path(tmp_dir) / "audible-auth.json"
             base_payload = {
                 "schemaVersion": 1,
+                "purpose": "audible_member_price_lookup",
                 "status": "ready",
                 "marketplace": "us",
                 "domain": "com",
                 "refreshToken": "test-only-refresh-token",
+                "accessToken": "test-only-access-token",
             }
             for expires, expected_expired in ((1000, True), (1001, False)):
                 auth_path.write_text(json.dumps({**base_payload, "expires": expires}), encoding="utf-8")

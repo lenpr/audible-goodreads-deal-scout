@@ -120,6 +120,9 @@ class AuthDiagnosticsTests(unittest.TestCase):
         self.assertEqual(saved["status"], "ready")
         self.assertEqual(saved["accessToken"], "access-1")
         self.assertEqual(saved["refreshToken"], "refresh-1")
+        self.assertNotIn("deviceInfo", saved)
+        self.assertNotIn("customerInfo", saved)
+        self.assertNotIn("serial", saved)
         self.assertIn("/auth/register", post_json.call_args.args[0])
         self.assertEqual(saved["purpose"], "audible_member_price_lookup")
         self.assertEqual(saved["credentialMetadata"]["allowedUse"], "audible_product_price_lookup_only")
@@ -133,6 +136,7 @@ class AuthDiagnosticsTests(unittest.TestCase):
                 json.dumps(
                     {
                         "schemaVersion": 1,
+                        "purpose": "audible_member_price_lookup",
                         "status": "ready",
                         "marketplace": "us",
                         "domain": "com",
@@ -166,6 +170,7 @@ class AuthDiagnosticsTests(unittest.TestCase):
                 json.dumps(
                     {
                         "schemaVersion": 1,
+                        "purpose": "audible_member_price_lookup",
                         "status": "ready",
                         "marketplace": "us",
                         "domain": "example.com",
@@ -190,6 +195,7 @@ class AuthDiagnosticsTests(unittest.TestCase):
                 json.dumps(
                     {
                         "schemaVersion": 1,
+                        "purpose": "audible_member_price_lookup",
                         "status": "ready",
                         "marketplace": "us",
                         "domain": "com",
@@ -220,6 +226,7 @@ class AuthDiagnosticsTests(unittest.TestCase):
                 json.dumps(
                     {
                         "schemaVersion": 1,
+                        "purpose": "audible_member_price_lookup",
                         "status": "ready",
                         "marketplace": "us",
                         "domain": "example.com",
@@ -251,10 +258,12 @@ class AuthDiagnosticsTests(unittest.TestCase):
                 json.dumps(
                     {
                         "schemaVersion": 1,
+                        "purpose": "audible_member_price_lookup",
                         "status": "ready",
                         "marketplace": "us",
                         "domain": "com",
                         "refreshToken": "refresh-secret",
+                        "accessToken": "access-secret",
                         "expires": 4_102_444_800,
                     }
                 ),
@@ -439,6 +448,7 @@ class AuthDiagnosticsTests(unittest.TestCase):
                 json.dumps(
                     {
                         "schemaVersion": 1,
+                        "purpose": "audible_member_price_lookup",
                         "status": "ready",
                         "marketplace": "us",
                         "domain": "com",
@@ -449,6 +459,8 @@ class AuthDiagnosticsTests(unittest.TestCase):
                 ),
                 encoding="utf-8",
             )
+            if os.name == "posix":
+                os.chmod(auth_path, 0o600)
             fixtures = tmp / "fixtures"
             write_want_to_read_fixtures(
                 fixtures,

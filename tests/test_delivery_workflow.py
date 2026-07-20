@@ -36,7 +36,7 @@ from helpers import (  # noqa: E402
 class DeliveryWorkflowTests(unittest.TestCase):
     def test_setup_writes_config_and_preferences(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp = Path(tmp_dir)
+            tmp = Path(tmp_dir).resolve()
             result = delivery_mod.setup_configuration(
                 {
                     "storageDir": str(tmp),
@@ -70,7 +70,7 @@ class DeliveryWorkflowTests(unittest.TestCase):
 
     def test_setup_returns_manual_instructions_when_write_fails(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp = Path(tmp_dir)
+            tmp = Path(tmp_dir).resolve()
             with mock.patch.object(delivery_mod, "write_json_atomic", side_effect=OSError("denied")):
                 result = delivery_mod.setup_configuration({"storageDir": str(tmp), "audibleMarketplace": "us"})
         self.assertFalse(result["written"])
@@ -79,7 +79,7 @@ class DeliveryWorkflowTests(unittest.TestCase):
 
     def test_setup_cron_registration_is_idempotent(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp = Path(tmp_dir)
+            tmp = Path(tmp_dir).resolve()
             config_path = tmp / "config.json"
             state_path = tmp / "state.json"
             spec = settings.validate_marketplace("us")
@@ -88,7 +88,8 @@ class DeliveryWorkflowTests(unittest.TestCase):
                 "id": "job-1",
                 "name": "Audible Goodreads Deal (US)",
                 "schedule": {"cron": spec["defaultCron"], "tz": spec["timezone"]},
-                "payload": {"message": expected_message},
+                "payload": {"message": expected_message, "lightContext": True, "thinking": "off"},
+                "trigger": {"script": "json({ fire: true });"},
             }
             with mock.patch.object(delivery_mod, "list_cron_jobs", return_value=[existing]):
                 result = delivery_mod.setup_configuration(
@@ -145,6 +146,19 @@ class DeliveryWorkflowTests(unittest.TestCase):
                 "delivery": {"mode": "announce", "channel": "telegram", "to": "-5038675285"},
                 "payload": {"message": message},
             }
+            updated = {
+                "id": "job-drifted",
+                "name": "Daily Audible deal watch (Books)",
+                "enabled": True,
+                "schedule": {"expr": "0 12 * * *", "tz": "America/Los_Angeles"},
+                "delivery": {"mode": "announce", "channel": "telegram", "to": "-1000000000000"},
+                "payload": {
+                    "message": delivery_mod.build_cron_message(config_path, state_path),
+                    "lightContext": True,
+                    "thinking": "off",
+                },
+                "trigger": {"script": "json({ fire: true });"},
+            }
             completed = subprocess.CompletedProcess(
                 args=[],
                 returncode=0,
@@ -152,7 +166,7 @@ class DeliveryWorkflowTests(unittest.TestCase):
                 stderr="",
             )
             with (
-                mock.patch.object(delivery_mod, "list_cron_jobs", return_value=[related]),
+                mock.patch.object(delivery_mod, "list_cron_jobs", side_effect=[[related], [updated]]),
                 mock.patch.object(delivery_mod.subprocess, "run", return_value=completed) as patched,
             ):
                 result = delivery_mod.register_cron_job(
@@ -291,7 +305,7 @@ class DeliveryWorkflowTests(unittest.TestCase):
         self.assertEqual(result["deliveryPolicy"], constants.DEFAULT_DELIVERY_POLICY)
 
     def test_publish_audit_reports_skill_key_and_publish_command(self) -> None:
-        args = mock.Mock(version="1.2.3", tags="latest,stable")
+        args = mock.Mock(version=public_cli.__version__, tags="latest,stable")
         with mock.patch("sys.stdout", new_callable=mock.MagicMock()) as fake_stdout:
             rc = public_cli.command_publish_audit(args)
             output_text = "".join(call.args[0] for call in fake_stdout.write.call_args_list)
@@ -325,13 +339,12 @@ class DeliveryWorkflowTests(unittest.TestCase):
     def test_repo_audit_detects_private_machine_markers(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp = Path(tmp_dir)
-            leak_text = "run this on " + "hor" + "st via " + "tail" + "scale"
+            leak_text = "private file: /Users/private-user/work/config.json"
             (tmp / "notes.txt").write_text(leak_text, encoding="utf-8")
             payload = repo_audit.scan_repo_for_leaks(tmp)
         self.assertFalse(payload["ok"])
         markers = {finding["marker"] for finding in payload["findings"]}
-        self.assertIn("hor" + "st", markers)
-        self.assertIn("tail" + "scale", markers)
+        self.assertIn("absolute_home_path", markers)
 
     def test_bold_visible_text_styles_ascii_title(self) -> None:
         self.assertEqual(rendering.bold_visible_text("Signal Fire"), "𝗦𝗶𝗴𝗻𝗮𝗹 𝗙𝗶𝗿𝗲")
@@ -488,13 +501,14 @@ class DeliveryWorkflowTests(unittest.TestCase):
             }
             runtime_path = tmp / "runtime.json"
             runtime_path.write_text(json.dumps(runtime_output), encoding="utf-8")
-            delivered = {"ok": True, "payload": {"ok": True, "messageId": "7"}}
+            delivered = {"ok": True, "delivered": True, "payload": {"ok": True, "messageId": "7"}}
             args = mock.Mock(
                 prepare_json=str(prepare_path),
                 runtime_output=str(runtime_path),
                 config_path=str(tmp / "config.json"),
                 delivery_channel=None,
                 delivery_target=None,
+                delivery_policy="positive_only",
                 openclaw_bin="openclaw",
                 dry_run=False,
             )
@@ -552,7 +566,7 @@ class DeliveryWorkflowTests(unittest.TestCase):
             "artifacts": {},
             "metadata": {"marketplace": "us", "marketplaceLabel": "Audible US", "storeLocalDate": "2026-04-20"},
         }
-        delivered = {"ok": True, "payload": {"ok": True, "messageId": "8"}}
+        delivered = {"ok": True, "delivered": True, "payload": {"ok": True, "messageId": "8"}}
         args = mock.Mock(
             prepare_json="-",
             runtime_output=None,
@@ -687,6 +701,7 @@ class DeliveryWorkflowTests(unittest.TestCase):
                             "marketplace": "us",
                             "storeLocalDate": "2026-04-20",
                             "invocationMode": "scheduled",
+                            "stateFile": str(state_file),
                             "dealKey": "us:2026-04-20:ABC1234567",
                         },
                     }
@@ -727,6 +742,7 @@ class DeliveryWorkflowTests(unittest.TestCase):
                             "marketplace": "us",
                             "storeLocalDate": "2026-04-20",
                             "invocationMode": "scheduled",
+                            "stateFile": str(state_file),
                             "dealKey": "us:2026-04-20:ABC1234567",
                         },
                     }

@@ -3,3 +3,8 @@ __pycache__/
 .DS_Store
 .audible-goodreads-deal-scout/
 .pytest_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+audible-auth*.json

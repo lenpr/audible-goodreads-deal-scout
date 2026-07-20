@@ -5,6 +5,9 @@ __pycache__/
 .audible-goodreads-deal-scout/
 audible-auth*.json
 .pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
 tests/
 docs/
 PROMPT_REQUEST.md

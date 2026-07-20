@@ -49,7 +49,9 @@ def parse_json_scripts(html_text: str, mime_type: str) -> list[Any]:
     for script_type, script_text in _parse_document(html_text).scripts:
         if script_type != wanted_type:
             continue
-        raw = html.unescape(script_text).strip()
+        # Script data is raw text. Entity-unescaping here can turn a valid JSON
+        # string such as "A &quot;Quoted&quot; Book" into invalid JSON.
+        raw = script_text.strip()
         if raw.startswith("<!--") and raw.endswith("-->"):
             raw = raw[4:-3].strip()
         if not raw:

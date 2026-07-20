@@ -23,7 +23,7 @@ class AudibleFetchTests(unittest.TestCase):
             seen_headers.update({key.lower(): value for key, value in request.header_items()})  # type: ignore[attr-defined]
             return FakeHttpResponse(AUDIBLE_HTML, "https://www.audible.com/pd/Signal-Fire-Audiobook/ABC1234567")
 
-        with mock.patch.object(audible_fetch.urllib.request, "urlopen", side_effect=fake_urlopen):
+        with mock.patch.object(audible_fetch, "open_audible_url", side_effect=fake_urlopen):
             text, final_url = audible_fetch.fetch_text_with_final_url("https://www.audible.com/dailydeal", retries=0)
 
         self.assertIn("Mozilla/5.0", seen_headers["user-agent"])
@@ -32,18 +32,62 @@ class AudibleFetchTests(unittest.TestCase):
         self.assertEqual(final_url, "https://www.audible.com/pd/Signal-Fire-Audiobook/ABC1234567")
 
     def test_audible_fetch_rejects_non_audible_urls(self) -> None:
-        with mock.patch.object(audible_fetch.urllib.request, "urlopen") as urlopen:
+        with mock.patch.object(audible_fetch, "open_audible_url") as urlopen:
             with self.assertRaises(audible_fetch.AudibleFetchError) as context:
                 audible_fetch.fetch_text_with_final_url("https://example.com/dailydeal", retries=0)
         self.assertFalse(urlopen.called)
         self.assertEqual(context.exception.reason_code, "error_unsafe_audible_url")
 
     def test_catalog_fetch_rejects_unsupported_audible_paths(self) -> None:
-        with mock.patch.object(audible_catalog.urllib.request, "urlopen") as urlopen:
+        with mock.patch.object(audible_catalog, "open_audible_url") as urlopen:
             with self.assertRaises(audible_fetch.AudibleFetchError) as context:
                 audible_catalog.fetch_catalog_text_with_final_url("https://www.audible.com/account")
         self.assertFalse(urlopen.called)
         self.assertEqual(context.exception.reason_code, "error_unsupported_audible_path")
+
+    def test_curl_follows_only_validated_audible_redirects(self) -> None:
+        start_url = "https://www.audible.com/dailydeal"
+        product_url = "https://www.audible.com/pd/1549190776"
+        redirect = subprocess.CompletedProcess(
+            ["curl"],
+            0,
+            stdout=f"\n{audible_fetch.CURL_META_MARKER}302\t{start_url}\t{product_url}",
+            stderr="",
+        )
+        success = subprocess.CompletedProcess(
+            ["curl"],
+            0,
+            stdout=f"{AUDIBLE_HTML}\n{audible_fetch.CURL_META_MARKER}200\t{product_url}\t",
+            stderr="",
+        )
+        with (
+            mock.patch.object(audible_fetch, "curl_available", return_value=True),
+            mock.patch.object(audible_fetch, "_run_curl", side_effect=[redirect, success]) as run_curl,
+        ):
+            result = audible_fetch._fetch_curl_once(start_url)
+        self.assertEqual(result.final_url, product_url)
+        self.assertEqual(run_curl.call_count, 2)
+        self.assertEqual(result.attempts[0]["reasonCode"], "safe_redirect_followed")
+
+    def test_curl_refuses_redirect_before_requesting_untrusted_host(self) -> None:
+        start_url = "https://www.audible.com/dailydeal"
+        redirect = subprocess.CompletedProcess(
+            ["curl"],
+            0,
+            stdout=(
+                f"\n{audible_fetch.CURL_META_MARKER}302\t{start_url}\t"
+                "https://example.invalid/private"
+            ),
+            stderr="",
+        )
+        with (
+            mock.patch.object(audible_fetch, "curl_available", return_value=True),
+            mock.patch.object(audible_fetch, "_run_curl", return_value=redirect) as run_curl,
+        ):
+            with self.assertRaises(audible_fetch.AudibleFetchError) as context:
+                audible_fetch._fetch_curl_once(start_url)
+        self.assertEqual(context.exception.reason_code, "error_unsafe_audible_url")
+        self.assertEqual(run_curl.call_count, 1)
 
     def test_daily_promotion_fetch_recovers_with_curl_after_python_503(self) -> None:
         def failing_urlopen(request: object, timeout: int = 30) -> FakeHttpResponse:
@@ -65,7 +109,7 @@ class AudibleFetchTests(unittest.TestCase):
         completed = subprocess.CompletedProcess(["curl"], 0, stdout=curl_stdout, stderr="")
 
         with (
-            mock.patch.object(audible_fetch.urllib.request, "urlopen", side_effect=failing_urlopen),
+            mock.patch.object(audible_fetch, "open_audible_url", side_effect=failing_urlopen),
             mock.patch.object(audible_fetch, "curl_available", return_value=True),
             mock.patch.object(audible_fetch.subprocess, "run", return_value=completed),
         ):
@@ -105,7 +149,7 @@ class AudibleFetchTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             artifact_dir = Path(tmp_dir) / "artifacts"
             with (
-                mock.patch.object(audible_fetch.urllib.request, "urlopen", side_effect=failing_urlopen),
+                mock.patch.object(audible_fetch, "open_audible_url", side_effect=failing_urlopen),
                 mock.patch.object(audible_fetch, "curl_available", return_value=True),
                 mock.patch.object(audible_fetch.subprocess, "run", return_value=completed),
             ):

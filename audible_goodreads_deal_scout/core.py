@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import json
+import math
 import time
 import urllib.parse
 from datetime import UTC, date, datetime
@@ -21,6 +22,7 @@ from .constants import (
 )
 from .audible_fetch import (
     AudibleBlockedError,
+    AudibleFetchResult,
     AudibleFetchError,
     SUPPORTED_AUDIBLE_FETCH_BACKENDS,
     fetch_text_with_final_url,
@@ -48,6 +50,7 @@ from .settings import (
     SUPPORTED_MARKETPLACES,
     default_artifact_dir,
     load_config,
+    resolve_configured_path,
     resolve_notes_text,
     validate_marketplace,
 )
@@ -58,9 +61,11 @@ from .shared import (
     normalize_review_text,
     normalize_space,
     now_iso,
-    read_json,
     write_json_atomic,
 )
+
+
+AudibleFetcher = Callable[[str], tuple[str, str] | AudibleFetchResult]
 
 
 DOWNSTREAM_PREP_ARTIFACTS = (
@@ -74,6 +79,18 @@ PREPARE_FETCH_ERRORS: dict[type[Exception], tuple[str, str]] = {
     AudibleFetchError: ("error", "error_audible_fetch_failed"),
     AudibleParseError: ("error", "error_audible_parse_failed"),
 }
+CONFIG_PATH_KEYS = (
+    "artifactDir",
+    "audibleAuthPath",
+    "goodreadsCsvPath",
+    "notesFile",
+    "preferencesPath",
+    "stateFile",
+)
+
+
+class StateFileError(ValueError):
+    pass
 
 
 def export_age_days(export_path: Path, logical_run_date: date) -> int:
@@ -114,10 +131,22 @@ def default_state() -> dict[str, Any]:
 def load_state(path: Path | None) -> dict[str, Any]:
     if path is None:
         return default_state()
-    payload = read_json(path, default_state())
-    if not isinstance(payload, dict):
+    if not path.exists():
         return default_state()
+    try:
+        if path.stat().st_size > 1024 * 1024:
+            raise StateFileError(f"State file at {path} exceeds the 1 MiB safety limit.")
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except StateFileError:
+        raise
+    except Exception as exc:
+        raise StateFileError(f"State file at {path} is not readable JSON: {exc}") from exc
+    if not isinstance(payload, dict):
+        raise StateFileError(f"State file at {path} must contain a JSON object.")
     merged = {**default_state(), **payload}
+    for key in ("lastEmittedDealKey", "lastStaleWarningDate", "updatedAt"):
+        if merged.get(key) is not None and not isinstance(merged[key], str):
+            raise StateFileError(f"State field {key} must be a string or null.")
     return merged
 
 
@@ -146,8 +175,15 @@ def fetch_metadata_from_attempts(attempts: list[dict[str, Any]]) -> dict[str, An
     normalized_attempts = [dict(attempt) for attempt in attempts if isinstance(attempt, dict)]
     if not normalized_attempts:
         return {}
-    successful_attempt = next((attempt for attempt in reversed(normalized_attempts) if attempt.get("ok")), None)
-    first_failure = next((attempt for attempt in normalized_attempts if not attempt.get("ok")), None)
+    successful_attempt = next(
+        (
+            attempt
+            for attempt in reversed(normalized_attempts)
+            if attempt.get("ok") is True and attempt.get("reasonCode") != "safe_redirect_followed"
+        ),
+        None,
+    )
+    first_failure = next((attempt for attempt in normalized_attempts if attempt.get("ok") is False), None)
     final_attempt = successful_attempt or normalized_attempts[-1]
     metadata: dict[str, Any] = {
         "backend": final_attempt.get("backend"),
@@ -281,7 +317,7 @@ def scheduled_prepare_rejection(prep_result: dict[str, Any]) -> dict[str, Any] |
 
 
 def fetch_audible_deal_with_retry(
-    fetcher: Callable[[str], tuple[str, str]],
+    fetcher: AudibleFetcher,
     requested_url: str,
     *,
     retries: int,
@@ -310,6 +346,7 @@ def fetch_audible_deal_with_retry(
             )
             if backoff_seconds > 0:
                 time.sleep(backoff_seconds * (attempt + 1))
+    raise RuntimeError("Audible fetch retry loop ended without a result or error.")
 
 
 def build_fit_context_entries(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -504,7 +541,11 @@ def finalize_skill_result(prep_result: dict[str, Any], runtime_output: dict[str,
     exact_shelf = normalize_space(str(personal_data.get("exactShelfMatch") or ""))
     warnings = list(prep_result.get("warnings") or [])
 
-    if validated_runtime["fit"]["status"] == "written" and validated_runtime["fit"]["sentence"]:
+    if (
+        personal_data.get("allowModelPersonalization")
+        and validated_runtime["fit"]["status"] == "written"
+        and validated_runtime["fit"]["sentence"]
+    ):
         fit_sentence = validated_runtime["fit"]["sentence"]
     elif exact_shelf == "to-read" and personal_data.get("allowModelPersonalization"):
         fit_sentence = FIT_MODEL_UNAVAILABLE_TO_READ
@@ -528,7 +569,9 @@ def finalize_skill_result(prep_result: dict[str, Any], runtime_output: dict[str,
             reason_text = "No matching Goodreads book page could be confirmed."
             status = "suppress"
         else:
-            threshold = float((prep_result.get("metadata") or {}).get("threshold") or DEFAULT_THRESHOLD)
+            threshold = _validated_threshold(
+                (prep_result.get("metadata") or {}).get("threshold", DEFAULT_THRESHOLD)
+            )
             rating = goodreads.get("averageRating")
             if rating is None:
                 reason_code = "error_goodreads_lookup_failed"
@@ -620,7 +663,7 @@ def _prepare_metadata(
 def _fetch_candidate_for_prepare(
     merged: dict[str, Any],
     *,
-    fetcher: Callable[[str], tuple[str, str]] | None,
+    fetcher: AudibleFetcher | None,
     requested_url: str,
     spec: dict[str, str],
     mode: str,
@@ -629,12 +672,10 @@ def _fetch_candidate_for_prepare(
     warnings: list[str],
     fetch_attempts: list[dict[str, Any]],
 ) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
-    retries = int(merged.get("audibleFetchRetries") if merged.get("audibleFetchRetries") is not None else 2)
-    backoff_seconds = float(
-        merged.get("audibleFetchBackoffSeconds")
-        if merged.get("audibleFetchBackoffSeconds") is not None
-        else 1.0
-    )
+    retries_value = merged.get("audibleFetchRetries")
+    backoff_value = merged.get("audibleFetchBackoffSeconds")
+    retries = int(2 if retries_value is None else retries_value)
+    backoff_seconds = float(1.0 if backoff_value is None else backoff_value)
     backend = normalize_space(str(merged.get("audibleFetchBackend") or "auto")).lower() or "auto"
     if backend not in SUPPORTED_AUDIBLE_FETCH_BACKENDS:
         append_unique_warning(warnings, f"Unsupported audibleFetchBackend '{backend}' was ignored; using auto.")
@@ -853,14 +894,31 @@ def _build_personalization_artifacts(
     return personal_data, artifacts
 
 
+def _resolve_file_config_paths(config_path: Path, config: dict[str, Any]) -> dict[str, Any]:
+    resolved = dict(config)
+    for key in CONFIG_PATH_KEYS:
+        path = resolve_configured_path(config_path, config.get(key))
+        if path is not None:
+            resolved[key] = str(path)
+    return resolved
+
+
+def _validated_threshold(value: Any) -> float:
+    threshold = float(value)
+    if not math.isfinite(threshold) or not 0 <= threshold <= 5:
+        raise ValueError("threshold must be a finite number between 0 and 5.")
+    return threshold
+
+
 def prepare_run(
     options: dict[str, Any],
     *,
-    fetcher: Callable[[str], tuple[str, str]] | None = None,
+    fetcher: AudibleFetcher | None = None,
 ) -> dict[str, Any]:
     ensure_python_version()
-    config_path = Path(options["configPath"]).resolve() if options.get("configPath") else None
-    _, file_config = load_config(config_path)
+    config_path = Path(str(options["configPath"])).expanduser().resolve() if options.get("configPath") else None
+    resolved_config_path, file_config = load_config(config_path)
+    file_config = _resolve_file_config_paths(resolved_config_path, file_config)
     merged = {**file_config, **{key: value for key, value in options.items() if value is not None}}
     artifact_dir = Path(str(merged.get("artifactDir") or default_artifact_dir())).expanduser()
     cleared_downstream_artifacts = clear_downstream_prepare_artifacts(artifact_dir)
@@ -895,13 +953,34 @@ def prepare_run(
         )
 
     warnings: list[str] = []
-    threshold = float(merged.get("threshold") or DEFAULT_THRESHOLD)
+    try:
+        threshold = _validated_threshold(
+            merged.get("threshold") if merged.get("threshold") is not None else DEFAULT_THRESHOLD
+        )
+    except (TypeError, ValueError) as exc:
+        return finish(
+            make_prepare_result(
+                "error",
+                "error_invalid_config",
+                str(exc),
+                warnings=[],
+                metadata={"invocationMode": invocation_mode},
+            )
+        )
     privacy_mode = normalize_space(str(merged.get("privacyMode") or "normal")).lower() or "normal"
     if privacy_mode not in SUPPORTED_PRIVACY_MODES:
-        privacy_mode = "normal"
+        return finish(
+            make_prepare_result(
+                "error",
+                "error_invalid_config",
+                f"privacyMode must be one of: {', '.join(sorted(SUPPORTED_PRIVACY_MODES))}.",
+                warnings=[],
+                metadata={"invocationMode": invocation_mode},
+            )
+        )
     requested_url = normalize_space(str(merged.get("audibleDealUrl") or spec["dealUrl"]))
     store_date = logical_store_date(spec, merged.get("today"))
-    base_metadata = _prepare_metadata(spec, store_date, invocation_mode, config_path)
+    base_metadata = _prepare_metadata(spec, store_date, invocation_mode, resolved_config_path)
 
     notes_file = normalize_space(str(merged.get("preferencesPath") or merged.get("notesFile") or ""))
     try:
@@ -954,13 +1033,25 @@ def prepare_run(
         raise RuntimeError("Audible fetch completed without a candidate or an error result.")
 
     state_path = Path(str(merged["stateFile"])).expanduser() if merged.get("stateFile") else None
-    state = load_state(state_path)
+    try:
+        state = load_state(state_path)
+    except StateFileError as exc:
+        return finish(
+            make_prepare_result(
+                "error",
+                "error_state_unreadable",
+                str(exc),
+                warnings=warnings,
+                audible=candidate,
+                metadata={**base_metadata, "stateFile": str(state_path) if state_path else None},
+            )
+        )
     deal_key = build_deal_key(spec, candidate, store_date)
     run_metadata = _prepare_metadata(
         spec,
         store_date,
         invocation_mode,
-        config_path,
+        resolved_config_path,
         state_path=state_path,
         deal_key=deal_key,
     )
@@ -1074,6 +1165,15 @@ def mark_emitted_from_prepare(
     invocation_mode = normalize_space(str(metadata.get("invocationMode") or "")).lower()
     if invocation_mode != "scheduled":
         raise ValueError("mark-emitted requires a scheduled prepare artifact.")
+    artifact_state_file = normalize_space(str(metadata.get("stateFile") or ""))
+    if not artifact_state_file:
+        raise ValueError("mark-emitted requires metadata.stateFile in the prepare artifact.")
+    expected_state_path = Path(artifact_state_file).expanduser().resolve()
+    requested_state_path = state_file.expanduser().resolve()
+    if expected_state_path != requested_state_path:
+        raise ValueError(
+            f"mark-emitted refused state file {requested_state_path}; current prepare artifact uses {expected_state_path}."
+        )
     rejection = scheduled_prepare_rejection(prep_result)
     if rejection:
         raise ValueError(str(rejection.get("message") or rejection.get("reasonCode") or "prepare artifact rejected"))
@@ -1085,7 +1185,7 @@ def mark_emitted_from_prepare(
         raise ValueError(
             f"mark-emitted refused deal key {normalized_expected}; current prepare artifact contains {deal_key}."
         )
-    return mark_emitted(state_file, deal_key, stale_warning_date=stale_warning_date)
+    return mark_emitted(requested_state_path, deal_key, stale_warning_date=stale_warning_date)
 
 
 def show_csv_headers(export_path: Path) -> dict[str, Any]:
