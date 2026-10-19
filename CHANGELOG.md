@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 0.1.19 - 2026-10-19
+
+- Use low thinking for scheduled runs so current Codex models no longer reject the legacy off setting
+- Keep cron creation, reconciliation, and live diagnostics aligned on the same thinking level
+- Add regression coverage for low-thinking idempotency, legacy cron repair, and live diagnostic drift
+
 ## 0.1.18 - 2026-07-19
 
 - Add a deterministic scheduled gate so positive-only suppressions do not start an agent or create cron run history

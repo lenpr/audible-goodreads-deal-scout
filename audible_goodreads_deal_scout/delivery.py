@@ -24,6 +24,7 @@ from .shared import atomic_write_text, ensure_python_version, normalize_space, w
 
 
 SCHEDULED_TRIGGER_FILENAME = "scheduled-trigger.js"
+SCHEDULED_THINKING = "low"
 
 
 def _run_openclaw(command: list[str], *, timeout: int, action: str) -> subprocess.CompletedProcess[str]:
@@ -163,7 +164,7 @@ def build_cron_command(
         cron_declaration_key(config_path),
         "--light-context",
         "--thinking",
-        "off",
+        SCHEDULED_THINKING,
         "--trigger-script",
         str(scheduled_trigger_path(config_path)),
         "--message",
@@ -234,7 +235,7 @@ def find_matching_cron_job(
             and normalize_space(str(payload.get("message") or payload.get("text") or "")) == message
             and delivery_matches
             and payload.get("lightContext") is True
-            and normalize_space(str(payload.get("thinking") or "")) == "off"
+            and normalize_space(str(payload.get("thinking") or "")) == SCHEDULED_THINKING
             and bool(trigger.get("script"))
         ):
             return job
@@ -311,7 +312,7 @@ def build_cron_edit_command(
         "isolated",
         "--light-context",
         "--thinking",
-        "off",
+        SCHEDULED_THINKING,
         "--trigger-script",
         str(scheduled_trigger_path(config_path)),
         "--message",

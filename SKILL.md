@@ -155,7 +155,7 @@ sh "{baseDir}/scripts/audible-goodreads-deal-scout.sh" setup \
 
 Use interactive `setup` only when the user explicitly wants prompt-by-prompt CLI onboarding. Otherwise prefer the non-interactive command with concrete flags.
 
-Before enabling daily automation, make sure the user's OpenClaw host can run the exact scheduled exec command unattended. Cron runs cannot wait for command approval. Registered jobs use an OpenClaw condition trigger; enable `cron.triggers.enabled` only on a trusted host where the user controls every cron-authoring agent and the local skill files. The job uses the marketplace's IANA timezone, lightweight bootstrap context, and disabled model thinking.
+Before enabling daily automation, make sure the user's OpenClaw host can run the exact scheduled exec command unattended. Cron runs cannot wait for command approval. Registered jobs use an OpenClaw condition trigger; enable `cron.triggers.enabled` only on a trusted host where the user controls every cron-authoring agent and the local skill files. The job uses the marketplace's IANA timezone, lightweight bootstrap context, and low model thinking. This explicit level supports Codex models that reject `off`; rerun setup with cron registration to repair older jobs.
 
 To remove automation, rerun non-interactive setup with `--no-daily-automation --register-cron`; this disables the related job and clears its trigger and fallback route. Use `--no-delivery` to clear the configured channel and target while preserving unrelated config.
 

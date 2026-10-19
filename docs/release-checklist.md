@@ -25,7 +25,7 @@ Use this before publishing a new version to ClawHub.
   - what is likely to appeal
   - one credible downside
   - the `to-read` shelf when applicable
-- On a trusted target host, verify `cron.triggers.enabled` is intentional and `doctor --check-cron` confirms the trigger, lightweight context, disabled thinking, IANA timezone, and delivery route
+- On a trusted target host, verify `cron.triggers.enabled` is intentional and `doctor --check-cron` confirms the trigger, lightweight context, low thinking, IANA timezone, and delivery route
 - Verify a deterministic `positive_only` suppression returns `fire: false` from `scheduled-gate` without starting an agent run
 
 ## Marketplace confidence

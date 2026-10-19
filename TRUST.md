@@ -78,7 +78,7 @@ Any purchase decision remains manual and outside the skill.
 
 ## Scheduled execution
 
-Daily registration uses an OpenClaw condition trigger to run deterministic preparation before an agent turn. Under the default `positive_only` policy, duplicate and deterministic non-match results return `fire: false`, avoiding a model run. Agent turns that are still required use lightweight bootstrap context with thinking disabled.
+Daily registration uses an OpenClaw condition trigger to run deterministic preparation before an agent turn. Under the default `positive_only` policy, duplicate and deterministic non-match results return `fire: false`, avoiding a model run. Agent turns that are still required use lightweight bootstrap context with low thinking, which supports current Codex models that reject disabled thinking.
 
 OpenClaw condition triggers can execute tools without supervision. `cron.triggers.enabled` should remain disabled unless the host, cron-authoring agents, local skill installation, and command approval policy are all trusted. Disabling automation through setup clears the related trigger and fallback delivery route.
 

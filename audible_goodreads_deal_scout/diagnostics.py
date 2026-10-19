@@ -14,7 +14,7 @@ from .audible_fetch import (
     curl_available,
     fetch_text_with_final_url,
 )
-from .delivery import build_cron_message, list_cron_jobs, resolve_openclaw_bin
+from .delivery import SCHEDULED_THINKING, build_cron_message, list_cron_jobs, resolve_openclaw_bin
 from .settings import (
     ConfigError,
     config_template,
@@ -195,6 +195,7 @@ def _cron_check(
         "timezone": spec["timezone"],
         "stateFile": state_file or None,
         "expectedMessage": expected_message,
+        "expectedThinking": SCHEDULED_THINKING,
         "expectedDelivery": {
             "channel": config.get("deliveryChannel"),
             "to": config.get("deliveryTarget"),
@@ -245,7 +246,8 @@ def _cron_check(
                 and not normalize_space(str(delivery.get("to") or ""))
             )
         light_context_matches = payload.get("lightContext") is True
-        thinking_matches = normalize_space(str(payload.get("thinking") or "")) == "off"
+        thinking = normalize_space(str(payload.get("thinking") or ""))
+        thinking_matches = thinking == SCHEDULED_THINKING
         trigger_configured = bool(trigger.get("script"))
         match = {
             "id": job.get("id"),
@@ -257,7 +259,9 @@ def _cron_check(
             "timezoneMatchesMarketplace": timezone_matches,
             "deliveryMatchesConfig": delivery_matches,
             "lightContextEnabled": light_context_matches,
-            "thinkingDisabled": thinking_matches,
+            "thinking": thinking,
+            "thinkingDisabled": thinking == "off",
+            "thinkingMatchesConfig": thinking_matches,
             "triggerConfigured": trigger_configured,
             "matchesConfig": (
                 message_matches

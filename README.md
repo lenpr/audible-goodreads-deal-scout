@@ -70,8 +70,8 @@ clawhub login
 clawhub publish . \
   --slug audible-goodreads-deal-scout \
   --name "Audible Goodreads Deal Scout" \
-  --version 0.1.18 \
-  --changelog "Harden scheduled execution, auth, config, scans, and release validation." \
+  --version 0.1.19 \
+  --changelog "Use supported low thinking for scheduled Codex runs and align cron diagnostics." \
   --tags latest
 ```
 
@@ -439,7 +439,7 @@ sh ./scripts/audible-goodreads-deal-scout.sh setup \
 
 The job uses the marketplace's IANA timezone, such as `America/Los_Angeles` for Audible US, so daylight-saving changes do not shift the intended local run time. Setup reconciles an existing related job instead of creating duplicates.
 
-Scheduled runs first execute a deterministic condition trigger. Duplicate runs and deterministic suppressions under `positive_only` return `fire: false`, so OpenClaw does not start a model or create run history. Runs that need Goodreads lookup or personalized writing use lightweight bootstrap context with model thinking disabled, then follow the generated runtime prompt.
+Scheduled runs first execute a deterministic condition trigger. Duplicate runs and deterministic suppressions under `positive_only` return `fire: false`, so OpenClaw does not start a model or create run history. Runs that need Goodreads lookup or personalized writing use lightweight bootstrap context with low model thinking, then follow the generated runtime prompt. Low thinking is explicit because current Codex models can reject `off`; rerun setup with cron registration to reconcile older jobs.
 
 Condition triggers are unattended code execution. Enable `cron.triggers.enabled` only on a trusted OpenClaw host whose cron-authoring agents and local skill files you control. Scheduled shell commands also need a non-interactive exec approval policy.
 
@@ -616,10 +616,10 @@ Useful checks:
 ```bash
 sh ./scripts/audible-goodreads-deal-scout.sh doctor --config-path .audible-goodreads-deal-scout/config.json
 sh ./scripts/audible-goodreads-deal-scout.sh show-csv-headers "/absolute/path/to/goodreads_library_export.csv"
-sh ./scripts/audible-goodreads-deal-scout.sh publish-audit --version 0.1.18 --tags latest
+sh ./scripts/audible-goodreads-deal-scout.sh publish-audit --version 0.1.19 --tags latest
 ```
 
-`doctor` checks the configured config, CSV, notes, auth file, cache directory, delivery settings, cron settings, Audible fetch backend, local OpenClaw binary, bundled shell wrapper, and installed skill version. Add `--check-cron` to query live OpenClaw jobs and verify schedule, IANA timezone, route, condition trigger, lightweight context, and disabled thinking. Disabled related jobs are reported separately from missing jobs.
+`doctor` checks the configured config, CSV, notes, auth file, cache directory, delivery settings, cron settings, Audible fetch backend, local OpenClaw binary, bundled shell wrapper, and installed skill version. Add `--check-cron` to query live OpenClaw jobs and verify schedule, IANA timezone, route, condition trigger, lightweight context, and low thinking. Diagnostics report `expectedThinking` and `thinkingMatchesConfig`; the retained `thinkingDisabled` field still reports whether thinking is literally `off`, not whether the job is correct. Disabled related jobs are reported separately from missing jobs.
 
 Add `--check-audible-fetch` when you want a live daily-deal fetch probe from the current host. This is opt-in because it makes a network request to Audible.
 
@@ -650,7 +650,7 @@ Useful helper commands:
 sh ./scripts/audible-goodreads-deal-scout.sh doctor --config-path .audible-goodreads-deal-scout/config.json
 sh ./scripts/audible-goodreads-deal-scout.sh show-csv-headers "/absolute/path/to/goodreads_library_export.csv"
 sh ./scripts/audible-goodreads-deal-scout.sh measure-context --goodreads-csv "/absolute/path/to/goodreads_library_export.csv" --output /tmp/fit-context.json
-sh ./scripts/audible-goodreads-deal-scout.sh publish-audit --version 0.1.18
+sh ./scripts/audible-goodreads-deal-scout.sh publish-audit --version 0.1.19
 ```
 
 Finalize and deliver in one step:
@@ -691,10 +691,10 @@ sh ./scripts/audible-goodreads-deal-scout.sh run-and-deliver \
 Before publishing, run:
 
 ```bash
-sh ./scripts/audible-goodreads-deal-scout.sh publish-audit --version 0.1.18 --tags latest
+sh ./scripts/audible-goodreads-deal-scout.sh publish-audit --version 0.1.19 --tags latest
 ```
 
-For public auditability, create a matching Git tag and GitHub release for each ClawHub version, for example `v0.1.18`. `publish-audit` fails when its requested version, the package version, and the changelog section do not agree.
+For public auditability, create a matching Git tag and GitHub release for each ClawHub version, for example `v0.1.19`. `publish-audit` fails when its requested version, the package version, and the changelog section do not agree.
 
 ## Why this is worth publishing
 

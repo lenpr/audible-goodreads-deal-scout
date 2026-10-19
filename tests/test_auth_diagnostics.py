@@ -377,6 +377,52 @@ class AuthDiagnosticsTests(unittest.TestCase):
         self.assertFalse(match["timezoneMatchesMarketplace"])
         self.assertFalse(match["deliveryMatchesConfig"])
 
+    def test_live_cron_thinking_matches_registration_policy(self) -> None:
+        config_path = Path("/tmp/audible-goodreads-deal-scout/config.json")
+        state_file = config_path.parent / "state.json"
+        spec = settings.validate_marketplace("us")
+        config = {
+            "audibleMarketplace": "us",
+            "dailyCron": spec["defaultCron"],
+            "stateFile": str(state_file),
+        }
+        for thinking in ("low", "off", "medium", "", None):
+            with self.subTest(thinking=thinking):
+                job = {
+                    "id": "job-thinking",
+                    "name": "Audible Goodreads Deal (US)",
+                    "enabled": True,
+                    "schedule": {"expr": spec["defaultCron"], "tz": spec["timezone"]},
+                    "payload": {
+                        "message": delivery_mod.build_cron_message(config_path, state_file),
+                        "lightContext": True,
+                        "thinking": thinking,
+                    },
+                    "trigger": {"script": "json({ fire: true });"},
+                }
+                with mock.patch.object(diagnostics, "list_cron_jobs", return_value=[job]):
+                    report = diagnostics._cron_check(
+                        config_path, config, openclaw_bin="/fake/openclaw", check_live_cron=True
+                    )
+                matches_policy = thinking == "low"
+                self.assertEqual(report["ok"], matches_policy)
+                self.assertEqual(report["status"], "matched" if matches_policy else "mismatch")
+                self.assertEqual(report["expectedThinking"], "low")
+                match = report["matches"][0]
+                self.assertEqual(match["thinkingMatchesConfig"], matches_policy)
+                self.assertEqual(match["thinkingDisabled"], thinking == "off")
+                self.assertEqual(match["thinking"], thinking or "")
+                self.assertEqual(
+                    delivery_mod.find_matching_cron_job(
+                        [job],
+                        name=job["name"],
+                        cron_expr=spec["defaultCron"],
+                        timezone_name=spec["timezone"],
+                        message=job["payload"]["message"],
+                    ) is not None,
+                    matches_policy,
+                )
+
     def test_doctor_report_can_check_live_audible_fetch(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp = Path(tmp_dir)

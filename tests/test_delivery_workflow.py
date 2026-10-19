@@ -88,7 +88,7 @@ class DeliveryWorkflowTests(unittest.TestCase):
                 "id": "job-1",
                 "name": "Audible Goodreads Deal (US)",
                 "schedule": {"cron": spec["defaultCron"], "tz": spec["timezone"]},
-                "payload": {"message": expected_message, "lightContext": True, "thinking": "off"},
+                "payload": {"message": expected_message, "lightContext": True, "thinking": "low"},
                 "trigger": {"script": "json({ fire: true });"},
             }
             with mock.patch.object(delivery_mod, "list_cron_jobs", return_value=[existing]):
@@ -120,6 +120,45 @@ class DeliveryWorkflowTests(unittest.TestCase):
         self.assertIn("telegram", command)
         self.assertIn("--to", command)
         self.assertIn("-1000000000000", command)
+
+    def test_register_cron_repairs_legacy_off_thinking_without_duplicate(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            config_path = tmp / "config.json"
+            state_path = tmp / "state.json"
+            shared.write_json_atomic(config_path, {"audibleMarketplace": "us"})
+            spec = settings.validate_marketplace("us")
+            existing = {
+                "id": "job-legacy",
+                "name": "Audible Goodreads Deal (US)",
+                "enabled": True,
+                "schedule": {"expr": spec["defaultCron"], "tz": spec["timezone"]},
+                "payload": {
+                    "message": delivery_mod.build_cron_message(config_path, state_path),
+                    "lightContext": True,
+                    "thinking": "off",
+                },
+                "trigger": {"script": "json({ fire: true });"},
+            }
+            updated = {**existing, "payload": {**existing["payload"], "thinking": "low"}}
+            completed = subprocess.CompletedProcess(args=[], returncode=0, stdout="{}", stderr="")
+            with (
+                mock.patch.object(delivery_mod, "list_cron_jobs", side_effect=[[existing], [updated]]),
+                mock.patch.object(delivery_mod.subprocess, "run", return_value=completed) as run,
+            ):
+                result = delivery_mod.register_cron_job(
+                    openclaw_bin="/fake/openclaw",
+                    spec=spec,
+                    config_path=config_path,
+                    state_file=state_path,
+                )
+        run.assert_called_once()
+        command = run.call_args.args[0]
+        self.assertEqual(command[3:5], ["edit", "job-legacy"])
+        self.assertEqual(command[command.index("--thinking") + 1], "low")
+        self.assertTrue(result["updated"])
+        self.assertFalse(result["created"])
+        self.assertEqual(result["job"]["id"], "job-legacy")
 
     def test_register_cron_reconciles_related_job_drift(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -155,7 +194,7 @@ class DeliveryWorkflowTests(unittest.TestCase):
                 "payload": {
                     "message": delivery_mod.build_cron_message(config_path, state_path),
                     "lightContext": True,
-                    "thinking": "off",
+                    "thinking": "low",
                 },
                 "trigger": {"script": "json({ fire: true });"},
             }

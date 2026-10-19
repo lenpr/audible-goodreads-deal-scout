@@ -248,7 +248,8 @@ class ConfigDeliveryStateTests(unittest.TestCase):
                 cron_expr="0 12 * * *",
             )
         self.assertIn("--light-context", add)
-        self.assertEqual(add[add.index("--thinking") + 1], "off")
+        self.assertEqual(add[add.index("--thinking") + 1], "low")
+        self.assertEqual(edit[edit.index("--thinking") + 1], "low")
         self.assertIn("--trigger-script", add)
         self.assertIn("--declaration-key", add)
         self.assertIn("--no-deliver", add)
